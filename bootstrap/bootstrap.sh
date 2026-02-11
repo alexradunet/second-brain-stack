@@ -87,8 +87,6 @@ apt-get update -qq
 
 # Install prerequisites
 log_info "Installing prerequisites..."
-
-# Install base packages (works on both Debian and Ubuntu)
 apt-get install -y -qq \
     curl \
     git \
@@ -100,11 +98,6 @@ apt-get install -y -qq \
     ca-certificates \
     gnupg \
     lsb-release
-
-# Install Ubuntu-specific packages if available (optional)
-if apt-cache show software-properties-common > /dev/null 2>&1; then
-    apt-get install -y -qq software-properties-common
-fi
 
 log_success "Prerequisites installed"
 
