@@ -1,6 +1,6 @@
 # Second Brain — AI-Assisted Personal Knowledge Management
 
-An AI-assisted personal knowledge management system built on Obsidian, powered by an AI agent (Nazar) running on OpenClaw, synchronized across devices via Syncthing, and hosted on a hardened Debian VPS.
+An AI-assisted personal knowledge management system built on Obsidian, powered by an AI agent (Nazar) running on OpenClaw, synchronized across devices via Syncthing, and hosted on a hardened OVHcloud Debian 13 VPS.
 
 **Architecture:** Docker containers with shared vault volume.
 

@@ -252,14 +252,6 @@ docker compose up -d
 nazar-cli restore nazar-backup-20250211_120000.tar.gz
 ```
 
-## Security
-
-- **No sudo required**: Everything runs as `debian` user
-- **Container isolation**: Services isolated in Docker
-- **SSH tunnel**: No public ports for SSH tunnel mode
-- **Token auth**: OpenClaw requires authentication
-- **Bind mounts**: Host directories owned by debian user (UID 1000)
-
 ## Troubleshooting
 
 ### Services Won't Start

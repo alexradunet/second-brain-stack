@@ -1,6 +1,6 @@
 ---
 name: vps-setup
-description: Provision a fresh Debian 13 VPS with hardened security, Tailscale networking, and the Nazar (OpenClaw + Syncthing vault sync) stack. Designed to be read by Claude Code running on the VPS to walk the user through setup interactively.
+description: Provision a fresh OVHcloud Debian 13 VPS with hardened security, Tailscale networking, and the Nazar (OpenClaw + Syncthing vault sync) stack. Designed to be read by Claude Code running on the VPS to walk the user through setup interactively.
 ---
 
 # VPS Setup Skill
