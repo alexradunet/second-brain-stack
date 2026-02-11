@@ -8,6 +8,12 @@
 
 You are guiding a user through setting up the Nazar Second Brain on their fresh VPS. This is an **interactive, step-by-step** process. Explain each step before executing it.
 
+**Architecture Overview:**
+- **No Docker** — Services run directly as systemd user services
+- **Two users** — `debian` (admin with sudo) and `nazar` (service, no sudo)
+- **Syncthing sync** — Real-time vault sync (not Git)
+- **Tailscale networking** — All access through VPN
+
 ---
 
 ## Pre-Flight Checks
@@ -17,7 +23,7 @@ Before starting, verify:
 1. **You are running on the VPS** — Check if `/root` or typical VPS files exist
 2. **The user is root or has sudo** — Check `whoami` and `sudo -l`
 3. **This is a fresh Debian/Ubuntu system** — Check `cat /etc/os-release`
-4. **Required tools are available** — `git`, `curl`, `nodejs` (or install them)
+4. **Required tools are available** — `git`, `curl` (or install them)
 
 ---
 
@@ -29,329 +35,160 @@ Guide the user through these phases in order:
 
 **Ask the user:**
 - "What VPS provider are you using?" (Hetzner, OVH, etc.)
-- "Do you want to create a dedicated deploy user, or use the default (debian/ubuntu)?"
-- "Do you have a GitHub repository for your vault already, or should we create a local bare repo?"
+- "Do you have a Tailscale account?" (needed for secure access)
 
 **Actions:**
 1. Update package lists: `apt update`
 2. Install prerequisites: `apt install -y curl git ufw fail2ban`
-3. If Node.js is not installed, install it (needed for later)
+3. Verify system meets requirements
 
-### Phase 2: Security Hardening
+### Phase 2: Run Bootstrap Script
 
-**Explain:** "We'll secure SSH to prevent unauthorized access."
+**Explain:** "We'll run the bootstrap script that sets up users, installs software, and hardens security."
 
-**Actions:**
-1. **Check current SSH config:**
-   ```bash
-   cat /etc/ssh/sshd_config | grep -E "^(PermitRootLogin|PasswordAuthentication|PubkeyAuthentication)"
-   ```
+**Action:**
+```bash
+# Run the bootstrap script
+curl -fsSL https://raw.githubusercontent.com/<user>/second-brain/main/bootstrap/bootstrap.sh | bash
+```
 
-2. **If root login is enabled, warn the user and ask for confirmation before disabling:**
-   - "SSH root login is currently enabled. For security, I recommend disabling it and using a regular user with sudo. Proceed?"
-   - **CRITICAL:** Before disabling root SSH, ensure the deploy user can SSH in with keys!
-
-3. **Verify deploy user has SSH keys:**
-   ```bash
-   # Check if root has authorized_keys to copy
-   if [ -f /root/.ssh/authorized_keys ]; then
-       mkdir -p /home/debian/.ssh
-       cp /root/.ssh/authorized_keys /home/debian/.ssh/
-       chown -R debian:debian /home/debian/.ssh
-       chmod 700 /home/debian/.ssh
-       chmod 600 /home/debian/.ssh/authorized_keys
-   fi
-   ```
-
-4. **Apply hardening (only after confirmation):**
-   ```bash
-   # Backup original
-   cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak.$(date +%Y%m%d)
-   
-   # Create hardened config in sshd_config.d (cleaner than modifying main file)
-   cat > /etc/ssh/sshd_config.d/hardened.conf << 'EOF'
-   # Disable root login
-   PermitRootLogin no
-   
-   # Disable password authentication (keys only)
-   PasswordAuthentication no
-   ChallengeResponseAuthentication no
-   UsePAM yes
-   
-   # Limit authentication attempts
-   MaxAuthTries 3
-   MaxSessions 3
-   LoginGraceTime 30
-   
-   # Disable unused auth methods
-   KbdInteractiveAuthentication no
-   X11Forwarding no
-   AllowAgentForwarding no
-   AllowTcpForwarding yes  # Required for VSCode Remote SSH
-   
-   # Only allow the deploy user (adjust if using ubuntu or other)
-   AllowUsers debian
-   EOF
-   
-   # Validate config before restarting
-   sshd -t || echo "SSH config invalid!"
-   
-   # Restart SSH
-   systemctl restart sshd
-   ```
-
-5. **Configure UFW firewall:**
-   ```bash
-   ufw default deny incoming
-   ufw default allow outgoing
-   ufw allow 22/tcp comment 'SSH'
-   ufw --force enable
-   ```
-
-6. **Enable Fail2Ban:**
-   ```bash
-   systemctl enable fail2ban
-   systemctl start fail2ban
-   ```
-
-7. **Enable unattended upgrades:**
-   ```bash
-   apt install -y unattended-upgrades apt-listchanges
-   
-   # Configure unattended-upgrades (non-interactive)
-   cat > /etc/apt/apt.conf.d/50unattended-upgrades << 'EOF'
-   Unattended-Upgrade::Allowed-Origins {
-       "${distro_id}:${distro_codename}";
-       "${distro_id}:${distro_codename}-security";
-   };
-   Unattended-Upgrade::AutoFixInterruptedDpkg "true";
-   Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
-   Unattended-Upgrade::Remove-Unused-Dependencies "true";
-   Unattended-Upgrade::Automatic-Reboot "true";
-   Unattended-Upgrade::Automatic-Reboot-Time "04:00";
-   EOF
-   
-   cat > /etc/apt/apt.conf.d/20auto-upgrades << 'EOF'
-   APT::Periodic::Update-Package-Lists "1";
-   APT::Periodic::Unattended-Upgrade "1";
-   APT::Periodic::AutocleanInterval "7";
-   EOF
-   
-   systemctl enable unattended-upgrades
-   systemctl restart unattended-upgrades
-   ```
+**What this does:**
+- Creates `debian` (admin) and `nazar` (service) users
+- Installs Node.js 22, OpenClaw, Syncthing, Tailscale
+- Hardens SSH (keys only, no root, no passwords)
+- Configures firewall and fail2ban
+- Sets up systemd user services
 
 ### Phase 3: Tailscale Installation
 
 **Explain:** "Tailscale creates a secure VPN mesh so you can access your VPS privately without exposing ports to the internet."
 
 **Actions:**
-1. Install Tailscale:
+1. Start Tailscale:
    ```bash
-   curl -fsSL https://tailscale.com/install.sh | sh
+   sudo tailscale up
    ```
 
-2. Start Tailscale (this will output an auth URL):
-   ```bash
-   tailscale up
-   ```
-
-3. **Instruct the user:**
+2. **Instruct the user:**
    - "Please open the authentication URL in your browser and log in with your Tailscale account."
    - "Once done, run `tailscale status` to verify you're connected."
 
-4. **After user confirms Tailscale is connected**, get the Tailscale IP:
+3. **After user confirms Tailscale is connected**, get the Tailscale IP:
    ```bash
    tailscale ip -4
    ```
 
-5. **Optional but recommended:** Lock SSH to Tailscale only
+4. **Optional but recommended:** Lock SSH to Tailscale only
    - Ask: "Would you like to lock SSH access to Tailscale only? This prevents anyone from even attempting SSH from the public internet."
    - If yes:
      ```bash
-     # Get Tailscale interface name (usually tailscale0)
-     TAILSCALE_IF=$(ip -o link show | grep -i tailscale | awk -F': ' '{print $2}' | head -1)
-     
-     # Update UFW to only allow SSH on Tailscale interface
-     ufw delete allow 22/tcp
-     ufw allow in on $TAILSCALE_IF to any port 22 proto tcp comment 'SSH via Tailscale only'
+     # First verify: ssh debian@<tailscale-ip>
+     # Then lock down
+     sudo ufw delete allow 22/tcp
+     sudo ufw allow in on tailscale0 to any port 22 proto tcp comment 'SSH via Tailscale only'
      ```
 
-### Phase 4: Docker Installation
+### Phase 4: Clone Repository
 
-**Explain:** "Docker will run the Nazar gateway container."
-
-**Actions:**
-1. **Add swap if low memory** (Docker builds need RAM):
-   ```bash
-   TOTAL_MEM=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
-   if [ "$TOTAL_MEM" -lt 2048 ] && [ ! -f /swapfile ]; then
-       echo "Low memory (${TOTAL_MEM}MB). Adding 2GB swap..."
-       fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
-       chmod 600 /swapfile
-       mkswap /swapfile
-       swapon /swapfile
-       echo '/swapfile none swap sw 0 0' >> /etc/fstab
-   fi
-   ```
-
-2. Install Docker:
-   ```bash
-   curl -fsSL https://get.docker.com | sh
-   ```
-
-3. Add deploy user to docker group:
-   ```bash
-   usermod -aG docker debian  # or whatever deploy user was chosen
-   ```
-
-4. Install Docker Compose plugin:
-   ```bash
-   apt install -y docker-compose-plugin
-   ```
-
-5. Verify installation:
-   ```bash
-   docker --version
-   docker compose version
-   ```
-   
-   **Note:** The deploy user must log out and back in for docker group to take effect, or run `newgrp docker`.
-
-### Phase 5: Deploy User Setup
-
-**Actions:**
-1. Create deploy user if not exists:
-   ```bash
-   id debian || useradd -m -s /bin/bash -G sudo debian
-   ```
-
-2. Ensure deploy user has SSH key:
-   ```bash
-   mkdir -p /home/debian/.ssh
-   # If root has authorized_keys, copy them
-   if [ -f /root/.ssh/authorized_keys ]; then
-       cp /root/.ssh/authorized_keys /home/debian/.ssh/
-       chown -R debian:debian /home/debian/.ssh
-       chmod 700 /home/debian/.ssh
-       chmod 600 /home/debian/.ssh/authorized_keys
-   fi
-   ```
-
-3. Set up passwordless sudo for deploy user:
-   ```bash
-   echo "debian ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/debian
-   chmod 440 /etc/sudoers.d/debian
-   ```
-
-### Phase 6: Nazar Installation
-
-**Explain:** "Now we'll set up the Nazar stack - the vault repository, configuration, and containers."
+**Explain:** "Now we'll clone the repository and copy the vault to the service user."
 
 **Actions:**
 
-1. **Copy deploy files from the cloned repo to /srv/nazar:**
+1. Switch to debian user:
    ```bash
-   NAZAR_ROOT=/srv/nazar
-   DEPLOY_DIR=~/nazar_deploy/deploy  # Note: deploy/ is a subdirectory of the repo
-   
-   mkdir -p $NAZAR_ROOT
-   
-   # Check if deploy directory exists in the cloned repo
-   if [ -d "$DEPLOY_DIR" ]; then
-       cp -r $DEPLOY_DIR/* $NAZAR_ROOT/
-   else
-       echo "Error: deploy/ directory not found in $DEPLOY_DIR"
-       echo "Make sure you cloned the full repository, not just the deploy folder"
-       echo "Expected structure: ~/nazar_deploy/deploy/"
-       ls -la ~/nazar_deploy/  # Show what's actually there
-       exit 1
-   fi
+   su - debian
    ```
 
-2. **Run the main setup script:**
+2. Clone the repository:
    ```bash
-   cd $NAZAR_ROOT
-   NAZAR_ROOT=/srv/nazar DEPLOY_USER=debian bash scripts/setup-vps.sh
+   git clone <repo-url> ~/nazar
+   cd ~/nazar
    ```
 
-   This script will:
-   - Create the vault directory structure
-   - Initialize git repositories
-   - Set up auto-commit cron
-   - Clone OpenClaw source
-   - Build and start containers
-
-3. **Monitor the build process** — this takes 10-15 minutes on a 2-core VPS.
-
-4. **After the script completes, verify:**
+3. Copy vault to nazar user:
    ```bash
-   cd /srv/nazar
-   docker compose ps
+   sudo cp -r vault/* /home/nazar/vault/
+   sudo chown -R nazar:nazar /home/nazar/vault
    ```
 
-### Phase 7: Initial Configuration
+### Phase 5: Start Syncthing
 
-**Explain:** "The containers are running. Now we need to configure the OpenClaw gateway."
+**Explain:** "Syncthing will synchronize the vault between your devices in real-time."
 
-**Actions:**
-1. Create the `openclaw` command alias for the deploy user:
-   ```bash
-   cat >> /home/debian/.bashrc << 'EOF'
-   alias openclaw='sudo docker exec -it nazar-gateway node dist/index.js'
-   EOF
-   ```
-
-2. **Instruct the user:**
-   - "The basic setup is complete! Now you need to configure the gateway."
-   - "Please log out and log back in as the deploy user, then run:"
-   - "`openclaw configure`"
-   - "This interactive wizard will set up your LLM providers, API keys, and channels."
-
-3. **Provide the Tailscale access URL:**
-   ```bash
-   HOSTNAME=$(tailscale status --json | grep -o '"HostName": "[^"]*"' | cut -d'"' -f4)
-   echo "Your gateway will be accessible at: https://${HOSTNAME}/"
-   ```
-
-### Phase 8: Vault Setup Instructions
-
-**Explain to the user how to sync their vault:**
-
-**Option A: Starting Fresh**
+**Action:**
 ```bash
-# On your laptop
-git clone debian@<tailscale-ip>:/srv/nazar/vault.git ~/nazar-vault
+sudo bash ~/nazar/nazar/scripts/setup-syncthing.sh
 ```
 
-**Option B: Existing Vault**
+**Instructions for user:**
+1. Access `http://<tailscale-ip>:8384`
+2. Set admin username and password (important!)
+3. Note the Device ID
+4. On laptop/phone, add this VPS device and share the vault folder
+
+### Phase 6: Start OpenClaw
+
+**Explain:** "OpenClaw is the AI gateway that powers the Nazar agent."
+
+**Action:**
 ```bash
-# On your laptop, in your existing vault directory
-git remote add origin debian@<tailscale-ip>:/srv/nazar/vault.git
-git push -u origin main
+sudo bash ~/nazar/nazar/scripts/setup-openclaw.sh
 ```
 
-**Option C: Using GitHub as Remote**
-- If the user wants to use GitHub instead, help them:
-  1. Set `VAULT_GIT_REMOTE` in the setup script
-  2. Re-run setup
+**Then configure:**
+```bash
+sudo -u nazar openclaw configure
+```
 
-### Phase 9: Security Verification
+**Instructions for user:**
+- This interactive wizard sets up LLM providers, API keys, and channels
+- The gateway will be available at `https://<tailscale-hostname>/`
+
+### Phase 7: Device Pairing
+
+**Explain:** "The first time you access the web UI, you need to approve your browser."
+
+**Action:**
+```bash
+# List pending devices
+sudo -u nazar openclaw devices list
+
+# Approve your browser
+sudo -u nazar openclaw devices approve <request-id>
+```
+
+### Phase 8: Security Verification
 
 **Run the security audit:**
 ```bash
-bash /srv/nazar/vault/99-system/openclaw/skills/vps-setup/scripts/audit-vps.sh
+nazar-audit
 ```
 
 **Check all items pass.** If any fail, fix them before considering setup complete.
+
+### Phase 9: Optional Security Hardening
+
+**Explain:** "We can add additional security layers like audit logging, file integrity monitoring, and encrypted backups."
+
+**Action:**
+```bash
+sudo bash ~/nazar/system/scripts/setup-all-security.sh
+```
+
+This presents a menu of optional enhancements:
+- Audit logging
+- File integrity monitoring
+- Canary tokens
+- Encrypted backups
+- Automatic security response
 
 ---
 
 ## Important Reminders
 
 ### Before Disabling Root SSH
-- Ensure the deploy user can SSH in: `ssh debian@<tailscale-ip>`
-- Ensure deploy user has sudo access
+- Ensure the debian user can SSH in: `ssh debian@<tailscale-ip>`
+- Ensure debian user has sudo access
 - Have a backup way to access the VPS (VNC/console from provider)
 
 ### Before Locking SSH to Tailscale
@@ -359,44 +196,57 @@ bash /srv/nazar/vault/99-system/openclaw/skills/vps-setup/scripts/audit-vps.sh
 - Verify you can SSH via Tailscale IP
 - Test from your local machine: `ssh debian@<tailscale-ip>`
 
-### Docker Build Considerations
-- The build takes 10-15 minutes on 2-core VPS
-- Requires ~3GB disk space for the image
-- May fail on low-memory VPS (<2GB) — add swap if needed
+### Syncthing Setup
+- Ensure all devices are on the same Tailscale network
+- Device IDs must be exchanged for pairing
+- Initial sync may take time for large vaults
 
 ---
 
 ## Common Issues & Solutions
 
-### Issue: Docker build fails with out of memory
-**Solution:** Add swap
+### Issue: Syncthing devices not connecting
+**Solution:** 
 ```bash
-fallocate -l 2G /swapfile
-chmod 600 /swapfile
-mkswap /swapfile
-swapon /swapfile
-echo '/swapfile none swap sw 0 0' >> /etc/fstab
+# Check Tailscale connectivity
+tailscale status
+ping <other-device-tailscale-ip>
+
+# Check Syncthing is listening
+sudo -u nazar ss -tlnp | grep syncthing
+```
+
+### Issue: OpenClaw won't start
+**Solution:**
+```bash
+# Check config validity
+sudo -u nazar jq . ~/.openclaw/openclaw.json
+
+# Check logs
+sudo -u nazar journalctl --user -u openclaw -n 50
+
+# Verify Node.js installation
+node --version
+which openclaw
 ```
 
 ### Issue: Permission denied on vault
-**Solution:** Fix ownership
+**Solution:**
 ```bash
-chown -R debian:vault /srv/nazar/vault
-find /srv/nazar/vault -type d -exec chmod 2775 {} +
+sudo chown -R nazar:nazar /home/nazar/vault
 ```
 
-### Issue: Container fails to start
-**Solution:** Check logs
+### Issue: Can't access web UI
+**Solution:**
 ```bash
-cd /srv/nazar
-docker compose logs nazar-gateway
-```
+# Check OpenClaw is running
+sudo -u nazar systemctl --user status openclaw
 
-### Issue: Git push rejected
-**Solution:** Pull first
-```bash
-cd /srv/nazar/vault
-git pull --rebase origin main
+# Check it's listening
+sudo -u nazar ss -tlnp | grep 18789
+
+# Check Tailscale serve
+tailscale serve status
 ```
 
 ---
@@ -406,11 +256,12 @@ git pull --rebase origin main
 After setup is complete, verify:
 
 - [ ] SSH works via Tailscale: `ssh debian@<tailscale-ip>`
-- [ ] Containers are running: `docker compose ps`
+- [ ] Syncthing is running: `sudo -u nazar systemctl --user status syncthing`
+- [ ] OpenClaw is running: `sudo -u nazar systemctl --user status openclaw`
 - [ ] Gateway responds: `curl -sk https://<tailscale-hostname>/`
-- [ ] Vault git works: `git clone debian@<tailscale-ip>:/srv/nazar/vault.git /tmp/test-clone`
-- [ ] Security audit passes: `bash audit-vps.sh`
-- [ ] User can run `openclaw configure`
+- [ ] Vault permissions correct: `stat /home/nazar/vault`
+- [ ] Security audit passes: `nazar-audit`
+- [ ] User can run `sudo -u nazar openclaw configure`
 
 ---
 
@@ -419,17 +270,18 @@ After setup is complete, verify:
 ### Before Making Destructive Changes
 - **SSH Hardening:** Always confirm the user has another way in (console/VNC) before disabling root SSH
 - **Tailscale Lock:** Verify `ssh debian@<tailscale-ip>` works before locking public SSH
-- **Docker Group:** Remind user to log out/in or run `newgrp docker` after adding to docker group
+- **Service Restart:** Warn user that restarting OpenClaw will interrupt active conversations
 
 ### Cloud Provider Quirks
 - **Hetzner:** May have cloud-init that overwrites SSH config on reboot
 - **OVH:** Often has different default users (check `id ubuntu` or `id debian`)
 - **AWS:** Uses `ubuntu` or `ec2-user`, check `/home` directory
 
-### If Docker Build Fails
-1. Check memory: `free -h`
-2. Add more swap if needed
-3. Try build with limited parallelism: `DOCKER_BUILDKIT=0 docker compose build`
+### If OpenClaw Fails to Start
+1. Check Node.js version: `node --version` (should be 22+)
+2. Check OpenClaw installation: `which openclaw`
+3. Check config file is valid JSON: `sudo -u nazar jq . ~/.openclaw/openclaw.json`
+4. Check logs: `sudo -u nazar journalctl --user -u openclaw`
 
 ---
 
@@ -439,21 +291,21 @@ Once setup is complete, provide the user with:
 
 1. **Tailscale hostname:** `https://<hostname>.<tailnet>.ts.net/`
 2. **SSH command:** `ssh debian@<tailscale-ip>`
-3. **Vault clone command:** `git clone debian@<tailscale-ip>:/srv/nazar/vault.git ~/nazar-vault`
+3. **Syncthing GUI:** `http://<tailscale-ip>:8384`
 4. **Next steps:**
-   - Run `openclaw configure` to set up models and channels
-   - Clone vault to laptop and open in Obsidian
-   - Install Obsidian Git plugin for auto-sync
+   - Complete `sudo -u nazar openclaw configure` for API keys
+   - Set up Syncthing on laptop/phone
+   - Open vault in Obsidian
+   - Optional: Run security hardening
 
 ### Backup Reminder
-**Important:** Remind the user to set up backups for their vault:
+**Important:** Remind the user to set up backups:
 ```bash
-# The vault is at /srv/nazar/vault/ on the VPS
-# Git provides distributed backup (each clone is a full backup)
-# For additional safety, consider:
-# - Regular git push to GitHub/GitLab as remote
-# - Local backups on laptop/phone
-# - VPS snapshots (if provider supports it)
+# Option 1: Use encrypted backup script
+sudo bash ~/nazar/system/scripts/setup-backup.sh
+
+# Option 2: Syncthing versioning protects against deletes
+# Configure in Syncthing GUI: Folder -> Versioning -> Simple File Versioning
 ```
 
 ---

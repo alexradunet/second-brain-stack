@@ -40,7 +40,7 @@ vault/
 - **Folders**: kebab-case with numeric prefix (`01-daily-journey/`, not `01 Daily Journey/`)
 - **Daily notes**: `YYYY-MM-DD.md` inside `01-daily-journey/YYYY/MM-MonthName/`
 - **Templates**: descriptive names with underscores (`daily_note_template.md`)
-- **No spaces in folder names**: Prevents quoting issues across Docker, shell, and cross-platform sync
+- **No spaces in folder names**: Prevents quoting issues across shell scripts and cross-platform sync
 
 ## Folder Descriptions
 

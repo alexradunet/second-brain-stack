@@ -37,7 +37,7 @@ obsidian-cli.py list-daily --year 2026    # List daily notes
 **Environment variables:**
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VAULT_PATH` | `/vault` | Path to Obsidian vault root |
+| `VAULT_PATH` | `/home/nazar/vault` | Path to Obsidian vault root |
 
 ---
 
@@ -74,10 +74,10 @@ transcribe.py audio.ogg small    # Transcribe with timestamps
 **Environment variables:**
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VAULT_PATH` | `/vault` | Obsidian vault root |
-| `VOICE_VENV` | `/opt/voice-venv` | Python venv with Whisper/Piper |
-| `WHISPER_MODEL_DIR` | `/opt/models/whisper` | Whisper model cache |
-| `PIPER_MODEL_DIR` | `/opt/models/piper` | Piper voice models |
+| `VAULT_PATH` | `/home/nazar/vault` | Obsidian vault root |
+| `VOICE_VENV` | `/home/nazar/.local/venv-voice` | Python venv with Whisper/Piper |
+| `WHISPER_MODEL_DIR` | `/home/nazar/.local/share/whisper` | Whisper model cache |
+| `PIPER_MODEL_DIR` | `/home/nazar/.local/share/piper` | Piper voice models |
 
 ---
 
@@ -92,20 +92,20 @@ Automated provisioning and security hardening for a Debian VPS.
 | `secure-vps.sh` | User creation, SSH hardening, firewall, fail2ban, auto-updates |
 | `install-tailscale.sh` | Install + authenticate Tailscale |
 | `lock-ssh-to-tailscale.sh` | Remove public SSH, Tailscale-only access |
-| `install-docker.sh` | Install Docker CE + Compose plugin |
+| `install-node.sh` | Install Node.js 22 for OpenClaw |
 | `audit-vps.sh` | Security + health audit (read-only) |
 
 **Usage:**
 ```bash
-# Full provisioning (interactive, one Tailscale auth step)
-sudo bash provision-vps.sh --deploy-repo /srv/nazar/deploy
+# Full provisioning (one command)
+sudo bash bootstrap/bootstrap.sh
 
 # Or step by step
-sudo bash secure-vps.sh
-sudo bash install-tailscale.sh
-sudo bash lock-ssh-to-tailscale.sh
-sudo bash install-docker.sh
-sudo bash audit-vps.sh
+sudo bash vault/99-system/openclaw/skills/vps-setup/scripts/secure-vps.sh
+sudo bash vault/99-system/openclaw/skills/vps-setup/scripts/install-tailscale.sh
+sudo bash vault/99-system/openclaw/skills/vps-setup/scripts/lock-ssh-to-tailscale.sh
+sudo bash vault/99-system/openclaw/skills/vps-setup/scripts/install-node.sh
+sudo bash vault/99-system/openclaw/skills/vps-setup/scripts/audit-vps.sh
 ```
 
 No environment variables — all paths are detected or hardcoded to standard locations.
