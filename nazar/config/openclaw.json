@@ -13,7 +13,7 @@
     "port": 18789,
     "auth": {
       "type": "token",
-      "token": "GENERATE_SECURE_TOKEN"
+      "token": "GENERATE_NEW_TOKEN"
     },
     "tailscale": {
       "mode": "serve"

@@ -90,7 +90,7 @@ su - debian -c "sudo whoami"
 sudo cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
 
 # Apply hardened settings
-sudo tee /etc/ssh/sshd_config.d/hardened.conf > /dev/null << 'EOF'
+sudo tee /etc/ssh/sshd_config.d/nazar.conf > /dev/null << 'EOF'
 # Disable root login
 PermitRootLogin no
 
@@ -471,11 +471,11 @@ Run through this checklist:
 
 ```bash
 # 1. No root SSH
-grep "PermitRootLogin" /etc/ssh/sshd_config.d/hardened.conf
+grep "PermitRootLogin" /etc/ssh/sshd_config.d/nazar.conf
 # Expected: PermitRootLogin no
 
 # 2. No password auth
-grep "PasswordAuthentication" /etc/ssh/sshd_config.d/hardened.conf
+grep "PasswordAuthentication" /etc/ssh/sshd_config.d/nazar.conf
 # Expected: PasswordAuthentication no
 
 # 3. Firewall active

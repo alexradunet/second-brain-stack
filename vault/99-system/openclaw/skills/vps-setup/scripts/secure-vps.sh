@@ -38,7 +38,7 @@ fi
 info "Hardening SSH..."
 cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak 2>/dev/null || true
 
-tee /etc/ssh/sshd_config.d/hardened.conf > /dev/null << 'EOF'
+tee /etc/ssh/sshd_config.d/nazar.conf > /dev/null << 'EOF'
 PermitRootLogin no
 PasswordAuthentication no
 ChallengeResponseAuthentication no

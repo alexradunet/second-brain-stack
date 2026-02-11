@@ -30,11 +30,11 @@ chown -R nazar:nazar /home/nazar/.openclaw
 # Check if token needs regeneration
 CONFIG_FILE="/home/nazar/.openclaw/openclaw.json"
 if [ -f "$CONFIG_FILE" ]; then
-    if grep -q "GENERATE_NEW_TOKEN\|CHANGE_ME\|your-token-here" "$CONFIG_FILE" 2>/dev/null; then
+    if grep -q "GENERATE_NEW_TOKEN\|GENERATE_SECURE_TOKEN\|CHANGE_ME\|your-token-here" "$CONFIG_FILE" 2>/dev/null; then
         log_info "Generating secure gateway token..."
         TOKEN=$(openssl rand -hex 32)
         # Use temp file for sed to avoid issues
-        sed -i.bak "s/GENERATE_NEW_TOKEN/$TOKEN/g; s/CHANGE_ME/$TOKEN/g" "$CONFIG_FILE" 2>/dev/null || true
+        sed -i.bak "s/GENERATE_NEW_TOKEN/$TOKEN/g; s/GENERATE_SECURE_TOKEN/$TOKEN/g; s/CHANGE_ME/$TOKEN/g" "$CONFIG_FILE" 2>/dev/null || true
         rm -f "$CONFIG_FILE.bak"
         chown nazar:nazar "$CONFIG_FILE"
     fi

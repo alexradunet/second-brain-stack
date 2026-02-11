@@ -284,12 +284,16 @@ cat > /home/nazar/.openclaw/openclaw.json << 'EOF'
   "models": {},
   "channels": {},
   "tools": {
-    "allowed": ["read_file", "write_file", "edit_file", "shell", "web_search"],
+    "allowed": ["read_file", "write_file", "edit_file", "shell", "web_search", "task"],
     "sandbox": {
       "binds": [
         "/home/nazar/vault:/vault:rw"
       ]
     }
+  },
+  "limits": {
+    "maxConcurrentAgents": 4,
+    "maxConcurrentSubagents": 8
   }
 }
 EOF

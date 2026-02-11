@@ -1,6 +1,9 @@
 #!/bin/bash
 # audit-vps.sh — Security and health audit for Nazar VPS
 # Run as root or with sudo. Safe to run anytime — read-only checks.
+#
+# Current architecture: systemd user services (openclaw, syncthing)
+# running under the 'nazar' user, vault synced via Syncthing over Tailscale.
 set -uo pipefail
 
 GREEN='\033[0;32m'
@@ -24,22 +27,34 @@ echo ""
 
 # ── SSH ──
 echo "SSH Configuration:"
-if grep -q "PermitRootLogin no" /etc/ssh/sshd_config.d/hardened.conf 2>/dev/null; then
-    pass "Root login disabled"
-else
-    fail "Root login NOT disabled"
+# Support both config filenames (bootstrap uses nazar.conf, legacy uses hardened.conf)
+SSH_CONF=""
+if [ -f /etc/ssh/sshd_config.d/nazar.conf ]; then
+    SSH_CONF="/etc/ssh/sshd_config.d/nazar.conf"
+elif [ -f /etc/ssh/sshd_config.d/hardened.conf ]; then
+    SSH_CONF="/etc/ssh/sshd_config.d/hardened.conf"
 fi
 
-if grep -q "PasswordAuthentication no" /etc/ssh/sshd_config.d/hardened.conf 2>/dev/null; then
-    pass "Password auth disabled (key-only)"
-else
-    fail "Password auth still enabled"
-fi
+if [ -n "$SSH_CONF" ]; then
+    if grep -q "PermitRootLogin no" "$SSH_CONF" 2>/dev/null; then
+        pass "Root login disabled"
+    else
+        fail "Root login NOT disabled"
+    fi
 
-if grep -q "AllowUsers debian" /etc/ssh/sshd_config.d/hardened.conf 2>/dev/null; then
-    pass "SSH restricted to 'debian' user"
+    if grep -q "PasswordAuthentication no" "$SSH_CONF" 2>/dev/null; then
+        pass "Password auth disabled (key-only)"
+    else
+        fail "Password auth still enabled"
+    fi
+
+    if grep -q "AllowUsers debian" "$SSH_CONF" 2>/dev/null; then
+        pass "SSH restricted to 'debian' user"
+    else
+        warn "SSH not restricted to specific users"
+    fi
 else
-    warn "SSH not restricted to specific users"
+    fail "No SSH hardening config found (expected nazar.conf or hardened.conf)"
 fi
 echo ""
 
@@ -65,11 +80,11 @@ else
     fail "Gateway port (18789) exposed publicly — should be 127.0.0.1 only"
 fi
 
-# Syncthing ports should NOT be open anymore
+# Syncthing communicates over Tailscale, no UFW ports needed
 if sudo ufw status | grep -q "22000\|21027"; then
-    warn "Syncthing ports (22000/21027) still open in UFW — remove them"
+    warn "Syncthing ports (22000/21027) still open in UFW — remove them (Syncthing uses Tailscale)"
 else
-    pass "No Syncthing ports open (correct — using git sync)"
+    pass "No Syncthing ports in UFW (correct — Syncthing uses Tailscale)"
 fi
 echo ""
 
@@ -109,143 +124,131 @@ else
 fi
 echo ""
 
-# ── Docker ──
-echo "Docker:"
-if command -v docker &>/dev/null; then
-    pass "Docker installed ($(docker --version 2>/dev/null | awk '{print $3}' | tr -d ','))"
+# ── Users ──
+echo "Users:"
+if id "nazar" &>/dev/null; then
+    pass "nazar service user exists"
 else
-    fail "Docker not installed"
+    fail "nazar service user not found"
 fi
 
-if command -v docker &>/dev/null && docker compose version &>/dev/null; then
-    pass "Docker Compose available"
+if id "debian" &>/dev/null; then
+    pass "debian admin user exists"
 else
-    fail "Docker Compose not available"
-fi
-echo ""
-
-# ── Containers ──
-echo "Nazar Containers:"
-if [ -f /srv/nazar/docker-compose.yml ]; then
-    GW_STATUS=$(docker inspect --format='{{.State.Status}}' nazar-gateway 2>/dev/null || echo "not found")
-
-    if [ "$GW_STATUS" = "running" ]; then
-        pass "nazar-gateway: running"
-    else
-        fail "nazar-gateway: $GW_STATUS"
-    fi
-
-    # Syncthing should NOT be running
-    ST_STATUS=$(docker inspect --format='{{.State.Status}}' nazar-syncthing 2>/dev/null || echo "not found")
-    if [ "$ST_STATUS" = "not found" ]; then
-        pass "nazar-syncthing: removed (correct — using git sync)"
-    else
-        warn "nazar-syncthing still exists ($ST_STATUS) — remove it"
-    fi
-else
-    warn "No docker-compose.yml at /srv/nazar/ (stack not deployed yet)"
-fi
-echo ""
-
-# ── Vault Git Sync ──
-echo "Vault Git Sync:"
-if [ -d /srv/nazar/vault/.git ]; then
-    pass "Vault is a git repo"
-
-    # Check shared repository config
-    SHARED=$(git -C /srv/nazar/vault config --get core.sharedRepository 2>/dev/null || echo "")
-    if [ "$SHARED" = "group" ] || [ "$SHARED" = "1" ]; then
-        pass "core.sharedRepository=group"
-    else
-        warn "core.sharedRepository not set to group (currently: '$SHARED')"
-    fi
-
-    # Check remote points to bare repo
-    REMOTE=$(git -C /srv/nazar/vault remote get-url origin 2>/dev/null || echo "")
-    if [ "$REMOTE" = "/srv/nazar/vault.git" ]; then
-        pass "Remote origin points to bare repo"
-    elif [ -n "$REMOTE" ]; then
-        warn "Remote origin: $REMOTE (expected /srv/nazar/vault.git)"
-    else
-        fail "No remote origin configured"
-    fi
-
-    # Check working copy status
-    if git -C /srv/nazar/vault diff --quiet 2>/dev/null && git -C /srv/nazar/vault diff --cached --quiet 2>/dev/null; then
-        pass "Working copy clean"
-    else
-        warn "Working copy has uncommitted changes (auto-commit cron will pick them up)"
-    fi
-else
-    fail "Vault is NOT a git repo"
+    fail "debian admin user not found"
 fi
 
-if [ -d /srv/nazar/vault.git ]; then
-    pass "Bare repo exists"
-    if [ -x /srv/nazar/vault.git/hooks/post-receive ]; then
-        pass "Post-receive hook installed"
-    else
-        fail "Post-receive hook missing or not executable"
-    fi
+# Check nazar has no sudo
+if sudo -l -U nazar 2>&1 | grep -q "not allowed\|may not run"; then
+    pass "nazar user has no sudo access"
 else
-    fail "Bare repo /srv/nazar/vault.git not found"
+    warn "nazar user may have sudo access — review permissions"
 fi
 
-# Check auto-commit cron
-if crontab -u debian -l 2>/dev/null | grep -q vault-auto-commit; then
-    pass "Auto-commit cron installed"
+# Check nazar password locked
+if passwd -S nazar 2>/dev/null | grep -q "L"; then
+    pass "nazar user password locked"
 else
-    fail "Auto-commit cron not installed for debian user"
+    warn "nazar user password not locked"
 fi
 
-# Check vault group
-if getent group vault >/dev/null 2>&1; then
-    pass "vault group exists"
-    if id -nG debian 2>/dev/null | grep -qw vault; then
-        pass "debian user in vault group"
-    else
-        fail "debian user NOT in vault group"
-    fi
+# Check home directory permissions
+NAZAR_PERMS=$(stat -c "%a" /home/nazar 2>/dev/null || echo "")
+if [ "$NAZAR_PERMS" = "700" ]; then
+    pass "nazar home directory restricted (700)"
 else
-    fail "vault group does not exist"
+    warn "nazar home directory permissions: $NAZAR_PERMS (expected 700)"
 fi
 echo ""
 
-# ── Secrets ──
-echo "Secrets:"
-if [ -f /srv/nazar/.env ]; then
-    pass ".env file exists"
-    if grep -q "sk-ant-\.\.\." /srv/nazar/.env; then
-        warn ".env still has placeholder API keys — edit them"
-    else
-        pass ".env has non-placeholder values"
-    fi
+# ── Systemd Services ──
+echo "Services (systemd user — nazar):"
+if su - nazar -c "systemctl --user is-active openclaw" 2>/dev/null | grep -q "active"; then
+    pass "openclaw.service is running"
 else
-    warn ".env not found (stack not configured yet)"
+    fail "openclaw.service is NOT running"
 fi
 
-# Check vault for leaked secrets
-VAULT_LEAKS=$(grep -rl "sk-ant-api\|sk-ant-admin" /srv/nazar/vault/ 2>/dev/null | head -3)
-if [ -n "$VAULT_LEAKS" ]; then
-    fail "Possible API keys found in vault files:"
-    echo "$VAULT_LEAKS" | while read f; do echo "       $f"; done
+if su - nazar -c "systemctl --user is-enabled openclaw" 2>/dev/null | grep -q "enabled"; then
+    pass "openclaw.service is enabled (starts on boot)"
 else
-    pass "No API keys detected in vault files"
+    warn "openclaw.service is NOT enabled"
+fi
+
+if su - nazar -c "systemctl --user is-active syncthing" 2>/dev/null | grep -q "active"; then
+    pass "syncthing.service is running"
+else
+    fail "syncthing.service is NOT running"
+fi
+
+if su - nazar -c "systemctl --user is-enabled syncthing" 2>/dev/null | grep -q "enabled"; then
+    pass "syncthing.service is enabled (starts on boot)"
+else
+    warn "syncthing.service is NOT enabled"
+fi
+
+# Check lingering enabled (services run without login)
+if loginctl show-user nazar 2>/dev/null | grep -q "Linger=yes"; then
+    pass "Lingering enabled for nazar (services survive logout)"
+else
+    warn "Lingering not enabled for nazar — services may stop on logout"
+fi
+echo ""
+
+# ── OpenClaw Config ──
+echo "OpenClaw Configuration:"
+OC_CONFIG="/home/nazar/.openclaw/openclaw.json"
+if [ -f "$OC_CONFIG" ]; then
+    pass "openclaw.json exists"
+
+    OC_PERMS=$(stat -c "%a" /home/nazar/.openclaw 2>/dev/null || echo "")
+    if [ "$OC_PERMS" = "700" ]; then
+        pass "Config directory restricted (700)"
+    else
+        warn "Config directory permissions: $OC_PERMS (expected 700)"
+    fi
+
+    if grep -qE "GENERATE_NEW_TOKEN|GENERATE_SECURE_TOKEN|CHANGE_ME|your-token-here" "$OC_CONFIG" 2>/dev/null; then
+        fail "Config still has placeholder token — run setup-openclaw.sh"
+    else
+        pass "Gateway token is set (no placeholders)"
+    fi
+else
+    fail "openclaw.json not found at $OC_CONFIG"
 fi
 echo ""
 
 # ── Vault ──
 echo "Vault:"
-if [ -d /srv/nazar/vault ]; then
-    VAULT_OWNER=$(stat -c '%U:%G' /srv/nazar/vault)
-    FOLDER_COUNT=$(ls -d /srv/nazar/vault/*/ 2>/dev/null | wc -l)
+if [ -d /home/nazar/vault ]; then
+    VAULT_OWNER=$(stat -c '%U:%G' /home/nazar/vault)
+    FOLDER_COUNT=$(ls -d /home/nazar/vault/*/ 2>/dev/null | wc -l)
     if [ "$FOLDER_COUNT" -gt 0 ]; then
         pass "Vault populated ($FOLDER_COUNT folders, owner: $VAULT_OWNER)"
     else
-        warn "Vault exists but empty (clone vault content via git)"
+        warn "Vault exists but empty (set up Syncthing to sync content)"
+    fi
+
+    if [ "$VAULT_OWNER" = "nazar:nazar" ]; then
+        pass "Vault owned by nazar:nazar"
+    else
+        warn "Vault ownership: $VAULT_OWNER (expected nazar:nazar)"
     fi
 else
-    warn "Vault directory not found"
+    fail "Vault directory not found at /home/nazar/vault/"
+fi
+echo ""
+
+# ── Secrets ──
+echo "Secrets:"
+if [ -d /home/nazar/vault ]; then
+    VAULT_LEAKS=$(grep -rl "sk-ant-api\|sk-ant-admin" /home/nazar/vault/ 2>/dev/null | head -3)
+    if [ -n "$VAULT_LEAKS" ]; then
+        fail "Possible API keys found in vault files:"
+        echo "$VAULT_LEAKS" | while read f; do echo "       $f"; done
+    else
+        pass "No API keys detected in vault files"
+    fi
 fi
 echo ""
 

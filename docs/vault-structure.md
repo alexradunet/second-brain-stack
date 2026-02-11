@@ -14,7 +14,7 @@ vault/
 ├── 02-projects/           Active projects with clear goals and deadlines
 ├── 03-areas/              Life areas requiring ongoing attention
 ├── 04-resources/          Reference material and knowledge base
-├── 05-arhive/             Completed or inactive items
+├── 05-archive/             Completed or inactive items
 ├── 99-system/             System configuration (not user content)
 │   ├── openclaw/          AI agent system
 │   │   ├── workspace/     Agent personality + memory
@@ -28,10 +28,10 @@ vault/
 
 | Folder | PARA Category | What Goes Here |
 |--------|---------------|----------------|
-| `02-projects/` | **Projects** | Tasks with a clear goal and deadline. Move to `05-arhive/` when done. |
+| `02-projects/` | **Projects** | Tasks with a clear goal and deadline. Move to `05-archive/` when done. |
 | `03-areas/` | **Areas** | Ongoing responsibilities with no end date — health, finances, career. |
 | `04-resources/` | **Resources** | Topics of interest, reference material, book notes, saved articles. |
-| `05-arhive/` | **Archive** | Completed projects, inactive areas, outdated resources. |
+| `05-archive/` | **Archive** | Completed projects, inactive areas, outdated resources. |
 
 `00-inbox/` and `01-daily-journey/` sit outside PARA as utility folders for capture and journaling.
 
@@ -67,7 +67,7 @@ Transcribed voice note content...
 ```
 
 ### `02-projects/`
-Active projects with clear goals and deadlines. Each project gets its own note or subfolder. When a project is finished or paused, move it to `05-arhive/`.
+Active projects with clear goals and deadlines. Each project gets its own note or subfolder. When a project is finished or paused, move it to `05-archive/`.
 
 ### `03-areas/`
 Life areas requiring ongoing attention — health, finances, career, relationships, personal development. These are living documents you tend continuously. Create subfolders per area.
@@ -75,7 +75,7 @@ Life areas requiring ongoing attention — health, finances, career, relationshi
 ### `04-resources/`
 Reference material and knowledge base. Topics of interest, book notes, article summaries, how-to guides. Organize by topic in subfolders.
 
-### `05-arhive/`
+### `05-archive/`
 Completed or inactive items from other folders. Nothing gets deleted — it just moves here when it's no longer active.
 
 ### `99-system/`

@@ -219,5 +219,5 @@ My Obsidian vault is mounted at /vault. It uses the PARA method:
 - 02-projects - Active projects with clear goals and deadlines
 - 03-areas - Life areas requiring ongoing attention
 - 04-resources - Reference material and knowledge base
-- 05-arhive - Completed or inactive items
+- 05-archive - Completed or inactive items
 - 99-system - Agent workspace, skills, templates, docs
