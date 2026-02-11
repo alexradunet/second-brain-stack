@@ -92,6 +92,8 @@ apt-get install -y -qq \
     git \
     ufw \
     fail2ban \
+    jq \
+    openssl \
     apt-transport-https \
     ca-certificates \
     gnupg \
@@ -99,6 +101,24 @@ apt-get install -y -qq \
     software-properties-common
 
 log_success "Prerequisites installed"
+
+# Check architecture (must be x86_64 or arm64)
+ARCH=$(uname -m)
+if [[ "$ARCH" != "x86_64" && "$ARCH" != "aarch64" ]]; then
+    log_warn "Architecture $ARCH may not be fully supported. x86_64 or arm64 recommended."
+fi
+
+# Add swap if low memory (< 2GB) - needed for Docker builds
+TOTAL_MEM=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
+if [ "$TOTAL_MEM" -lt 2048 ] && [ ! -f /swapfile ]; then
+    log_info "Low memory detected (${TOTAL_MEM}MB). Adding 2GB swap for Docker builds..."
+    fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
+    chmod 600 /swapfile
+    mkswap /swapfile
+    swapon /swapfile
+    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+    log_success "Swap enabled"
+fi
 
 # Install Node.js 20 LTS
 if ! command -v node &> /dev/null; then
@@ -157,13 +177,37 @@ fi
 if [ "$INSTALL_AI" = "claude" ]; then
     log_info "Installing Claude Code..."
     npm install -g @anthropic-ai/claude-code > /dev/null 2>&1
-    log_success "Claude Code installed"
+    # Ensure global npm bin is in PATH for the deploy user
+    NPM_GLOBAL_BIN=$(npm bin -g)
+    if ! grep -q "$NPM_GLOBAL_BIN" /home/$DEPLOY_USER/.bashrc 2>/dev/null; then
+        echo "export PATH=\"$NPM_GLOBAL_BIN:\$PATH\"" >> /home/$DEPLOY_USER/.bashrc
+    fi
+    # Also add for root (current session)
+    export PATH="$NPM_GLOBAL_BIN:$PATH"
+    # Verify installation
+    if command -v claude &> /dev/null; then
+        log_success "Claude Code installed: $(claude --version 2>/dev/null || echo 'unknown version')"
+    else
+        log_warn "Claude Code installed but not in PATH. Run: export PATH=\"$NPM_GLOBAL_BIN:\$PATH\""
+    fi
 fi
 
 if [ "$INSTALL_AI" = "kimi" ]; then
     log_info "Installing Kimi Code..."
     npm install -g @moonshot-ai/kimi-code > /dev/null 2>&1
-    log_success "Kimi Code installed"
+    # Ensure global npm bin is in PATH for the deploy user
+    NPM_GLOBAL_BIN=$(npm bin -g)
+    if ! grep -q "$NPM_GLOBAL_BIN" /home/$DEPLOY_USER/.bashrc 2>/dev/null; then
+        echo "export PATH=\"$NPM_GLOBAL_BIN:\$PATH\"" >> /home/$DEPLOY_USER/.bashrc
+    fi
+    # Also add for root (current session)
+    export PATH="$NPM_GLOBAL_BIN:$PATH"
+    # Verify installation
+    if command -v kimi &> /dev/null; then
+        log_success "Kimi Code installed"
+    else
+        log_warn "Kimi Code installed but not in PATH. Run: export PATH=\"$NPM_GLOBAL_BIN:\$PATH\""
+    fi
 fi
 
 # Create nazar_deploy directory
@@ -171,6 +215,10 @@ DEPLOY_DIR="/home/$DEPLOY_USER/nazar_deploy"
 log_info "Creating deploy directory: $DEPLOY_DIR"
 
 mkdir -p "$DEPLOY_DIR"
+
+# Warn about API keys needed
+log_info "Note: You'll need API keys for LLM providers (Anthropic, OpenAI, etc.)"
+log_info "      during the 'openclaw configure' step later."
 
 # Ask for repository URL
 echo ""

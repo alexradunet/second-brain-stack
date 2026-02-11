@@ -8,9 +8,11 @@ This is the **AI-assisted setup flow** for the Nazar Second Brain system. Instea
 
 1. **A VPS** — Any Debian 13-based VPS (Hetzner, OVH, DigitalOcean, etc.)
    - Recommended: 2 vCPU, 4GB RAM, 40GB SSD
-2. **SSH access** — Root or sudo user access
+   - Minimum: 1 vCPU, 2GB RAM, 20GB SSD (with swap)
+2. **SSH access** — Root or sudo user access with SSH key
 3. **Tailscale account** — [login.tailscale.com](https://login.tailscale.com) (free)
-4. **GitHub account** — For the vault repository
+4. **API Keys** — For LLM providers (Anthropic, OpenAI, etc.) - needed during `openclaw configure`
+5. **GitHub account** (optional) — Only if you want to use GitHub as your vault remote
 
 ---
 
@@ -31,8 +33,7 @@ curl -fsSL https://claude.ai/install.sh | sh
 
 **For Kimi Code:**
 ```bash
-# Follow the installation instructions for Kimi Code CLI
-# https://github.com/moonshot-ai/kimi-code-cli
+npm install -g @moonshot-ai/kimi-code
 ```
 
 ### Step 3: Create the deploy directory and clone this repo
@@ -155,8 +156,11 @@ Point Obsidian to `~/nazar-vault` and install the Git plugin.
 
 **Want to start over?**
 ```bash
+# Stop containers
+sudo docker compose -f /srv/nazar/docker-compose.yml down 2>/dev/null || true
+# Remove data (WARNING: this deletes your vault on the VPS!)
+# Make sure you have a backup or it's synced elsewhere first!
 sudo rm -rf /srv/nazar
-sudo docker compose down 2>/dev/null || true
 ```
 Then re-run the AI assistant.
 

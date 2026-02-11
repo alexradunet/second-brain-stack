@@ -49,16 +49,52 @@ Guide the user through these phases in order:
 
 2. **If root login is enabled, warn the user and ask for confirmation before disabling:**
    - "SSH root login is currently enabled. For security, I recommend disabling it and using a regular user with sudo. Proceed?"
+   - **CRITICAL:** Before disabling root SSH, ensure the deploy user can SSH in with keys!
 
-3. **Apply hardening (only after confirmation):**
+3. **Verify deploy user has SSH keys:**
+   ```bash
+   # Check if root has authorized_keys to copy
+   if [ -f /root/.ssh/authorized_keys ]; then
+       mkdir -p /home/debian/.ssh
+       cp /root/.ssh/authorized_keys /home/debian/.ssh/
+       chown -R debian:debian /home/debian/.ssh
+       chmod 700 /home/debian/.ssh
+       chmod 600 /home/debian/.ssh/authorized_keys
+   fi
+   ```
+
+4. **Apply hardening (only after confirmation):**
    ```bash
    # Backup original
    cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak.$(date +%Y%m%d)
    
-   # Apply hardening
-   sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
-   sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-   sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+   # Create hardened config in sshd_config.d (cleaner than modifying main file)
+   cat > /etc/ssh/sshd_config.d/hardened.conf << 'EOF'
+   # Disable root login
+   PermitRootLogin no
+   
+   # Disable password authentication (keys only)
+   PasswordAuthentication no
+   ChallengeResponseAuthentication no
+   UsePAM yes
+   
+   # Limit authentication attempts
+   MaxAuthTries 3
+   MaxSessions 3
+   LoginGraceTime 30
+   
+   # Disable unused auth methods
+   KbdInteractiveAuthentication no
+   X11Forwarding no
+   AllowAgentForwarding no
+   AllowTcpForwarding yes  # Required for VSCode Remote SSH
+   
+   # Only allow the deploy user
+   AllowUsers debian
+   EOF
+   
+   # Validate config before restarting
+   sshd -t || echo "SSH config invalid!"
    
    # Restart SSH
    systemctl restart sshd
@@ -80,8 +116,29 @@ Guide the user through these phases in order:
 
 6. **Enable unattended upgrades:**
    ```bash
-   apt install -y unattended-upgrades
-   dpkg-reconfigure -plow unattended-upgrades  # Select "Yes"
+   apt install -y unattended-upgrades apt-listchanges
+   
+   # Configure unattended-upgrades (non-interactive)
+   cat > /etc/apt/apt.conf.d/50unattended-upgrades << 'EOF'
+   Unattended-Upgrade::Allowed-Origins {
+       "${distro_id}:${distro_codename}";
+       "${distro_id}:${distro_codename}-security";
+   };
+   Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+   Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+   Unattended-Upgrade::Remove-Unused-Dependencies "true";
+   Unattended-Upgrade::Automatic-Reboot "true";
+   Unattended-Upgrade::Automatic-Reboot-Time "04:00";
+   EOF
+   
+   cat > /etc/apt/apt.conf.d/20auto-upgrades << 'EOF'
+   APT::Periodic::Update-Package-Lists "1";
+   APT::Periodic::Unattended-Upgrade "1";
+   APT::Periodic::AutocleanInterval "7";
+   EOF
+   
+   systemctl enable unattended-upgrades
+   systemctl restart unattended-upgrades
    ```
 
 ### Phase 3: Tailscale Installation
@@ -125,26 +182,41 @@ Guide the user through these phases in order:
 **Explain:** "Docker will run the Nazar gateway container."
 
 **Actions:**
-1. Install Docker:
+1. **Add swap if low memory** (Docker builds need RAM):
+   ```bash
+   TOTAL_MEM=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
+   if [ "$TOTAL_MEM" -lt 2048 ] && [ ! -f /swapfile ]; then
+       echo "Low memory (${TOTAL_MEM}MB). Adding 2GB swap..."
+       fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
+       chmod 600 /swapfile
+       mkswap /swapfile
+       swapon /swapfile
+       echo '/swapfile none swap sw 0 0' >> /etc/fstab
+   fi
+   ```
+
+2. Install Docker:
    ```bash
    curl -fsSL https://get.docker.com | sh
    ```
 
-2. Add deploy user to docker group:
+3. Add deploy user to docker group:
    ```bash
    usermod -aG docker debian  # or whatever deploy user was chosen
    ```
 
-3. Install Docker Compose plugin:
+4. Install Docker Compose plugin:
    ```bash
    apt install -y docker-compose-plugin
    ```
 
-4. Verify installation:
+5. Verify installation:
    ```bash
    docker --version
    docker compose version
    ```
+   
+   **Note:** The deploy user must log out and back in for docker group to take effect, or run `newgrp docker`.
 
 ### Phase 5: Deploy User Setup
 
@@ -181,10 +253,18 @@ Guide the user through these phases in order:
 1. **Copy deploy files from the cloned repo to /srv/nazar:**
    ```bash
    NAZAR_ROOT=/srv/nazar
-   DEPLOY_DIR=~/nazar_deploy/deploy
+   DEPLOY_DIR=~/nazar_deploy/deploy  # Note: deploy/ is a subdirectory of the repo
    
    mkdir -p $NAZAR_ROOT
-   cp -r $DEPLOY_DIR/* $NAZAR_ROOT/
+   
+   # Check if deploy directory exists in the cloned repo
+   if [ -d "$DEPLOY_DIR" ]; then
+       cp -r $DEPLOY_DIR/* $NAZAR_ROOT/
+   else
+       echo "Error: deploy/ directory not found in $DEPLOY_DIR"
+       echo "Make sure you cloned the full repository, not just the deploy folder"
+       exit 1
+   fi
    ```
 
 2. **Run the main setup script:**
@@ -332,6 +412,25 @@ After setup is complete, verify:
 
 ---
 
+## Important Notes for AI Assistants
+
+### Before Making Destructive Changes
+- **SSH Hardening:** Always confirm the user has another way in (console/VNC) before disabling root SSH
+- **Tailscale Lock:** Verify `ssh debian@<tailscale-ip>` works before locking public SSH
+- **Docker Group:** Remind user to log out/in or run `newgrp docker` after adding to docker group
+
+### Cloud Provider Quirks
+- **Hetzner:** May have cloud-init that overwrites SSH config on reboot
+- **OVH:** Often has different default users (check `id ubuntu` or `id debian`)
+- **AWS:** Uses `ubuntu` or `ec2-user`, check `/home` directory
+
+### If Docker Build Fails
+1. Check memory: `free -h`
+2. Add more swap if needed
+3. Try build with limited parallelism: `DOCKER_BUILDKIT=0 docker compose build`
+
+---
+
 ## User Handoff
 
 Once setup is complete, provide the user with:
@@ -343,6 +442,17 @@ Once setup is complete, provide the user with:
    - Run `openclaw configure` to set up models and channels
    - Clone vault to laptop and open in Obsidian
    - Install Obsidian Git plugin for auto-sync
+
+### Backup Reminder
+**Important:** Remind the user to set up backups for their vault:
+```bash
+# The vault is at /srv/nazar/vault/ on the VPS
+# Git provides distributed backup (each clone is a full backup)
+# For additional safety, consider:
+# - Regular git push to GitHub/GitLab as remote
+# - Local backups on laptop/phone
+# - VPS snapshots (if provider supports it)
+```
 
 ---
 

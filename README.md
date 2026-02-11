@@ -14,13 +14,14 @@ The fastest way to get started is using **Claude Code** or **Kimi Code** directl
 ssh root@<your-vps-ip>
 
 # 3. Run the bootstrap script
-curl -fsSL https://raw.githubusercontent.com/<your-username>/second-brain/main/bootstrap/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/refs/heads/master/bootstrap/bootstrap.sh | bash
 
 # 4. Follow the instructions to launch your AI assistant
 #    The AI will guide you through the complete setup interactively!
 ```
 
 **Or manually:**
+
 ```bash
 # Install Node.js and an AI assistant
 apt update && apt install -y nodejs npm
@@ -28,7 +29,7 @@ curl -fsSL https://claude.ai/install.sh | sh  # or install Kimi Code
 
 # Clone this repo
 cd ~ && mkdir -p nazar_deploy && cd nazar_deploy
-git clone https://github.com/<your-username>/second-brain.git .
+git clone https://github.com/alexradunet/easy-para-system-claw-vps.git .
 
 # Launch the AI assistant and ask for guidance
 claude
@@ -72,49 +73,53 @@ second-brain/
 
 ## Key Features
 
-| Feature | Description |
-|---------|-------------|
-| **🔒 Secure by Default** | Tailscale VPN + hardened SSH + no public ports |
-| **🎙️ Voice Processing** | Whisper STT + Piper TTS for voice notes |
-| **📱 Multi-Device Sync** | Git-based sync across laptop, phone, tablet |
-| **🤖 AI Agent** | Nazar manages your daily journal and answers questions |
-| **📓 PARA Method** | Organized by Projects, Areas, Resources, Archive |
-| **🐳 Containerized** | Single Docker container, easy to deploy |
+| Feature                  | Description                                            |
+| ------------------------ | ------------------------------------------------------ |
+| **🔒 Secure by Default** | Tailscale VPN + hardened SSH + no public ports         |
+| **🎙️ Voice Processing**  | Whisper STT + Piper TTS for voice notes                |
+| **📱 Multi-Device Sync** | Git-based sync across laptop, phone, tablet            |
+| **🤖 AI Agent**          | Nazar manages your daily journal and answers questions |
+| **📓 PARA Method**       | Organized by Projects, Areas, Resources, Archive       |
+| **🐳 Containerized**     | Single Docker container, easy to deploy                |
 
 ---
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| **[Bootstrap Guide](docs/bootstrap-guide.md)** | 🌟 AI-assisted VPS setup walkthrough |
-| **[Architecture](docs/architecture.md)** | System design, components, data flow |
-| **[Vault Structure](docs/vault-structure.md)** | PARA vault layout and conventions |
-| **[Agent System](docs/agent.md)** | Nazar agent — workspace, personality, memory |
-| **[Skills Reference](docs/skills.md)** | Available skills (obsidian, voice, vps-setup) |
-| **[Deployment Guide](docs/deployment.md)** | Traditional scripted deployment |
-| **[Security Model](docs/security.md)** | Hardening, Tailscale, secrets management |
-| **[Git Sync](docs/git-sync.md)** | Multi-device vault synchronization |
-| **[Troubleshooting](docs/troubleshooting.md)** | Common issues and fixes |
+| Document                                       | Description                                   |
+| ---------------------------------------------- | --------------------------------------------- |
+| **[Bootstrap Guide](docs/bootstrap-guide.md)** | 🌟 AI-assisted VPS setup walkthrough          |
+| **[Architecture](docs/architecture.md)**       | System design, components, data flow          |
+| **[Vault Structure](docs/vault-structure.md)** | PARA vault layout and conventions             |
+| **[Agent System](docs/agent.md)**              | Nazar agent — workspace, personality, memory  |
+| **[Skills Reference](docs/skills.md)**         | Available skills (obsidian, voice, vps-setup) |
+| **[Deployment Guide](docs/deployment.md)**     | Traditional scripted deployment               |
+| **[Security Model](docs/security.md)**         | Hardening, Tailscale, secrets management      |
+| **[Git Sync](docs/git-sync.md)**               | Multi-device vault synchronization            |
+| **[Troubleshooting](docs/troubleshooting.md)** | Common issues and fixes                       |
 
 ---
 
 ## Usage Patterns
 
 ### Daily Capture (Voice)
+
 1. Send a voice message to your agent (WhatsApp, Telegram, etc.)
 2. Nazar transcribes it with Whisper
 3. Text is appended to today's daily note with timestamp
 4. Auto-syncs to all your devices
 
 ### Daily Journal
+
 1. Open Obsidian on any device
 2. Navigate to `01-daily-journey/YYYY/MM-MMMM/YYYY-MM-DD.md`
 3. Write or review your day's notes
 4. Git sync happens automatically every 5 minutes
 
 ### Knowledge Queries
+
 Ask Nazar about anything in your vault:
+
 - "What did I decide about X last month?"
 - "Summarize my notes from the project meeting"
 - "What are my active projects with deadlines this week?"
@@ -123,15 +128,15 @@ Ask Nazar about anything in your vault:
 
 ## Technology Stack
 
-| Component | Technology |
-|-----------|------------|
-| **Gateway** | Node.js 22 (OpenClaw framework) |
+| Component            | Technology                             |
+| -------------------- | -------------------------------------- |
+| **Gateway**          | Node.js 22 (OpenClaw framework)        |
 | **Voice Processing** | Python 3 + Whisper (STT) + Piper (TTS) |
-| **Containerization** | Docker + Docker Compose |
-| **Sync** | Git over SSH |
-| **Networking** | Tailscale (WireGuard VPN) |
-| **OS** | Debian 13 |
-| **PKM App** | Obsidian |
+| **Containerization** | Docker + Docker Compose                |
+| **Sync**             | Git over SSH                           |
+| **Networking**       | Tailscale (WireGuard VPN)              |
+| **OS**               | Debian 13                              |
+| **PKM App**          | Obsidian                               |
 
 ---
 
@@ -166,4 +171,4 @@ MIT License — feel free to use, modify, and share.
 
 ---
 
-*Built with Obsidian, OpenClaw, and a lot of voice notes.*
+_Built with Obsidian, OpenClaw, and a lot of voice notes._

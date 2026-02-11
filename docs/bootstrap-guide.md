@@ -60,6 +60,7 @@ Choose any provider:
 - 2GB RAM minimum (4GB recommended)
 - 20GB disk minimum (40GB recommended)
 - SSH key access
+- API keys for LLM providers (Anthropic, OpenAI, etc.) - for `openclaw configure` step
 
 ### 2. Connect via SSH
 
