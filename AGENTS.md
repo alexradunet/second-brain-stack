@@ -2,7 +2,9 @@
 
 An AI-assisted personal knowledge management system built on Obsidian, powered by an AI agent (Nazar) running on OpenClaw, synchronized across devices via Syncthing, and hosted on a hardened Debian VPS behind Tailscale.
 
-**Architecture:** Simple and secure — no Docker, direct execution under dedicated user.
+**Architecture:** Two deployment options:
+1. **Docker** (Recommended) — Containerized OpenClaw + Syncthing with shared volume
+2. **Direct** — Simple execution under dedicated user (systemd)
 
 ---
 
@@ -12,7 +14,7 @@ This project consists of three integrated layers:
 
 1. **Content Layer** (`vault/`) — An Obsidian vault organized with the PARA method
 2. **Intelligence Layer** (OpenClaw Gateway) — The Nazar AI agent that processes voice messages and manages daily journals
-3. **Infrastructure Layer** — Simple services running directly on the VPS
+3. **Infrastructure Layer** — Services running in Docker containers or directly on VPS
 
 ```
 second-brain/
@@ -24,15 +26,59 @@ second-brain/
 │   ├── 04-resources/     ← Reference material
 │   ├── 05-archive/       ← Completed/inactive items
 │   └── 99-system/        ← Agent workspace, skills, templates
-├── nazar/                ← Service user configuration
+├── docker/               ← Docker deployment files (recommended)
+│   ├── docker-compose.yml
+│   ├── Dockerfile.openclaw
+│   ├── setup.sh
+│   └── nazar-cli.sh
+├── nazar/                ← Service user configuration (direct mode)
 │   ├── config/           ← OpenClaw config templates
 │   └── scripts/          ← Setup scripts for services
+├── bootstrap/            ← VPS bootstrap files (direct mode)
 ├── system/               ← System administration
 │   ├── scripts/          ← Admin helper scripts
 │   └── docs/             ← Admin documentation
-├── bootstrap/            ← VPS bootstrap files
 └── docs/                 ← User documentation
 ```
+
+---
+
+## Deployment: Docker (Recommended)
+
+OpenClaw and Syncthing run in Docker containers with a shared volume for the vault. Docker provides process isolation, eliminating the need for a separate service user.
+
+**Benefits:**
+- Isolated, reproducible environment
+- Easy updates (pull new images)
+- Consistent across different hosts
+- Simplified backup/restore
+- No separate service user needed
+
+```bash
+# Quick start
+curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/docker/setup.sh | bash
+```
+
+**Architecture:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│              VPS (Single debian user)                       │
+│                                                             │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
+│  │   OpenClaw   │  │  Syncthing   │  │   SSH/       │      │
+│  │  Container   │  │  Container   │  │  Tailscale   │      │
+│  └──────┬───────┘  └──────┬───────┘  └──────────────┘      │
+│         └─────────────────┼─────────────────┘               │
+│                  ┌────────┴────────┐                        │
+│                  │  ~/nazar/vault  │                        │
+│                  │  (bind mount)   │                        │
+│                  └─────────────────┘                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Deployment Modes:**
+- **SSH Tunnel** (default): Access via `ssh -L 18789:localhost:18789 debian@vps`
+- **Tailscale**: Mesh VPN for multi-device access
 
 ---
 
@@ -40,10 +86,10 @@ second-brain/
 
 | User | Purpose | Permissions |
 |------|---------|-------------|
-| `debian` | System administrator | sudo access, SSH login |
-| `nazar` | Service user | No sudo, runs OpenClaw + Syncthing |
+| `debian` | System administrator | SSH login, runs Docker containers |
+| `1000:1000` | Container user | Inside Docker containers |
 
-This separation ensures that even if the service account is compromised, the attacker cannot gain root access.
+Docker provides isolation - no separate service user needed on the host.
 
 ---
 
@@ -51,12 +97,13 @@ This separation ensures that even if the service account is compromised, the att
 
 | Component | Technology |
 |-----------|------------|
-| **Gateway** | Node.js 22 + OpenClaw (npm global install) |
-| **Voice Processing** | Python 3 + Whisper (STT) + Piper (TTS) |
-| **Sync** | Syncthing (P2P over Tailscale) |
-| **Networking** | Tailscale (WireGuard VPN) |
-| **OS** | Debian 13 |
+| **Gateway** | OpenClaw Docker image |
+| **Sync** | Syncthing official Docker image |
+| **Networking** | SSH tunnel (default) or Tailscale container |
+| **Voice Processing** | Optional: Whisper + Piper in container |
+| **OS** | Debian 13 / Ubuntu 22.04+ |
 | **PKM App** | Obsidian |
+| **Container Runtime** | Docker + Docker Compose |
 
 ---
 
@@ -144,79 +191,79 @@ VPS provisioning and security hardening scripts.
 
 ## Bootstrap and Deployment
 
-### Quick Start
+### Quick Deploy
 
 ```bash
-# On fresh VPS as root
-curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/bootstrap/bootstrap.sh | bash
-
-# Follow on-screen instructions to:
-# 1. Start Tailscale
-# 2. Clone and copy vault
-# 3. Start Syncthing
-# 4. Configure OpenClaw
+# On fresh Debian/Ubuntu VPS
+curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/docker/setup.sh | bash
 ```
 
-### What the Bootstrap Does
+See [docker/HETZNER.md](docker/HETZNER.md) for detailed Hetzner VPS deployment.
 
-1. **Creates users**: `debian` (admin), `nazar` (service)
-2. **Installs packages**: Node.js 22, OpenClaw, Syncthing, Tailscale
-3. **Hardens security**: SSH keys only, firewall, fail2ban, auto-updates
-4. **Sets up services**: systemd user services for OpenClaw and Syncthing
-5. **Configures environment**: Paths, permissions, helper scripts
+### What the Setup Does
+
+1. **Installs Docker** — Container runtime
+2. **Creates directory structure** — `~/nazar/` with vault, config, workspace
+3. **Generates OpenClaw config** — With secure token
+4. **Starts containers** — OpenClaw + Syncthing
+5. **Configures permissions** — UID 1000 for container access
+
+### Post-Setup
+
+```bash
+# Access services via SSH tunnel
+ssh -N -L 18789:localhost:18789 -L 8384:localhost:8384 debian@vps-ip
+
+# Then open:
+# - OpenClaw: http://localhost:18789
+# - Syncthing: http://localhost:8384
+```
 
 ---
 
 ## Service Management
 
-### OpenClaw Gateway
-
 ```bash
-# As debian user (with sudo)
-sudo -u nazar systemctl --user start openclaw
-sudo -u nazar systemctl --user stop openclaw
-sudo -u nazar systemctl --user restart openclaw
+cd ~/nazar/docker
 
-# Or use helper
-nazar-restart
+# Status
+docker compose ps
+
+# Start/Stop/Restart
+docker compose up -d
+docker compose down
+docker compose restart
 
 # Logs
-nazar-logs
-# or
-sudo -u nazar journalctl --user -u openclaw -f
-```
+docker compose logs -f
+docker compose logs -f openclaw
 
-### Syncthing
-
-```bash
-# As debian user (with sudo)
-sudo -u nazar systemctl --user start syncthing
-sudo -u nazar systemctl --user stop syncthing
-
-# Logs
-sudo -u nazar journalctl --user -u syncthing -f
-
-# CLI
-sudo -u nazar syncthing cli show system
+# Or use the CLI helper
+nazar-cli status
+nazar-cli logs
+nazar-cli restart
+nazar-cli shell
+nazar-cli configure
+nazar-cli backup
 ```
 
 ---
 
 ## Vault Synchronization (Syncthing)
 
-Syncthing provides real-time bidirectional sync over Tailscale:
+Syncthing provides real-time bidirectional sync:
 
 ```
 Laptop ◄──────────────────► VPS ◄──────────────────► Phone
 Syncthing                  Syncthing               Syncthing
-~/vault                    /home/nazar/vault       ~/vault
+~/vault                    ~/nazar/vault           ~/vault
       \________________________/
-              Tailscale VPN
+         SSH Tunnel or Internet
 ```
 
 ### Setup
 
-1. **VPS**: Syncthing runs as `nazar` user on port 8384
+1. **VPS**: Syncthing runs in container on port 8384
 2. **Devices**: Add VPS device ID to laptop/phone Syncthing
 3. **Folder**: Share `nazar-vault` folder across devices
 4. **Sync**: Changes propagate instantly (no cron needed)
@@ -229,42 +276,51 @@ Syncthing creates `.sync-conflict-YYYYMMDD-HHMMSS.md` files instead of blocking 
 
 ## Configuration
 
-### OpenClaw Config
+### OpenClaw
 
-Location: `/home/nazar/.openclaw/openclaw.json`
+Config: `~/nazar/.openclaw/openclaw.json`
 
 Key settings:
 - **Sandbox mode**: `non-main` — group chats are sandboxed
-- **Gateway**: Token auth, binds to loopback, Tailscale Serve enabled
-- **Workspace**: Points to `vault/99-system/openclaw/workspace`
+- **Gateway**: Token auth, binds to 0.0.0.0 inside container
+- **Workspace**: `~/nazar/.openclaw/workspace/` → `/home/node/.openclaw/workspace`
+- **Vault**: `~/nazar/vault/` → `/vault`
 
-### Environment Variables
+### Environment
 
-Set in `/home/nazar/.openclaw/.env`:
+Environment file: `~/nazar/docker/.env`
+
+Key variables:
+- `DEPLOYMENT_MODE` — `sshtunnel` or `tailscale`
+- `OPENCLAW_GATEWAY_BIND` — `127.0.0.1` (SSH) or `0.0.0.0` (Tailscale)
+- `TAILSCALE_AUTHKEY` — Tailscale authentication key
 - `ANTHROPIC_API_KEY` — Claude API key
-- `OPENAI_API_KEY` — OpenAI API key (if used)
-- `VAULT_PATH` — `/home/nazar/vault`
+- `OPENAI_API_KEY` — OpenAI API key
 
 ---
 
 ## Security Model
 
-Defense-in-depth with 5 layers:
+Defense-in-depth with 4 layers:
 
-1. **Network**: Tailscale VPN + UFW firewall — zero public ports
+1. **Network**: SSH tunnel (localhost only) or Tailscale VPN — zero public ports
 2. **Authentication**: SSH keys only — no passwords, no root login
-3. **User Isolation**: `nazar` user has no sudo access
-4. **Secrets**: API keys in `~/.openclaw/.env`, never in vault
-5. **Auto-Patching**: Unattended security upgrades daily
+3. **Container Isolation**: Services run as non-root UID 1000 inside containers
+4. **Secrets**: API keys in `~/nazar/docker/.env`, never in vault
 
 ### Security Audit
 
 ```bash
-# Run from vault
-sudo bash vault/99-system/openclaw/skills/vps-setup/scripts/audit-vps.sh
-```
+cd ~/nazar/docker
+docker compose exec openclaw openclaw health
+nazar-cli status
 
-Checks: root login disabled, SSH key-only, firewall active, Fail2Ban running, auto-updates enabled, Tailscale connected, no secrets in vault.
+# Check firewall
+sudo ufw status
+
+# Check SSH config
+grep "PermitRootLogin\|PasswordAuthentication" /etc/ssh/sshd_config
+```
 
 ---
 
@@ -277,7 +333,7 @@ Checks: root login disabled, SSH key-only, firewall active, Fail2Ban running, au
 - **No spaces in folder names** — prevents quoting issues
 
 ### Python Skills
-- Use environment variables for paths: `os.environ.get("VAULT_PATH", "/home/nazar/vault")`
+- Use environment variables for paths: `os.environ.get("VAULT_PATH", "/opt/nazar/vault")`
 - Never hardcode user paths
 - Keep skills self-contained
 
@@ -288,36 +344,45 @@ Checks: root login disabled, SSH key-only, firewall active, Fail2Ban running, au
 ### Quick Diagnostics
 
 ```bash
+cd ~/nazar/docker
+
 # Everything at a glance
-echo "=== Tailscale ===" && tailscale status
-echo "=== Services ===" && nazar-status
-echo "=== Firewall ===" && sudo ufw status
-echo "=== Syncthing ===" && sudo -u nazar syncthing cli show system | head -5
+docker compose ps
+docker compose logs --tail=50
+
+# Service-specific
+docker compose logs openclaw
+docker compose logs syncthing
+docker compose logs tailscale
 ```
 
 ### Common Issues
 
 **Syncthing not syncing:**
 ```bash
-# Check device connections
-sudo -u nazar syncthing cli show connections
-
-# Restart Syncthing
-sudo -u nazar systemctl --user restart syncthing
+docker compose exec syncthing syncthing cli show connections
+docker compose restart syncthing
 ```
 
 **OpenClaw won't start:**
 ```bash
-# Check config validity
-sudo -u nazar jq . ~/.openclaw/openclaw.json
-
-# Check logs
-sudo -u nazar journalctl --user -u openclaw -n 50
+docker compose logs openclaw
+docker compose exec openclaw cat /home/node/.openclaw/openclaw.json
 ```
 
 **Permission denied on vault:**
 ```bash
-sudo chown -R nazar:nazar /home/nazar/vault
+chown -R 1000:1000 ~/nazar/vault
+```
+
+**Can't access via SSH tunnel:**
+```bash
+# On laptop
+ssh -N -L 18789:localhost:18789 debian@YOUR_VPS_IP
+
+# Check if services are listening
+docker compose exec openclaw netstat -tlnp
+docker compose exec syncthing netstat -tlnp
 ```
 
 ---
@@ -326,6 +391,9 @@ sudo chown -R nazar:nazar /home/nazar/vault
 
 | Document | Description |
 |----------|-------------|
+| `docker/README.md` | Docker deployment guide |
+| `docker/HETZNER.md` | Hetzner VPS deployment guide |
+| `docker/SECURITY.md` | Security hardening and best practices |
 | `docs/README.md` | Project overview and quick start |
 | `docs/architecture.md` | System design and data flow |
 | `docs/vault-structure.md` | PARA method and folder conventions |
@@ -345,23 +413,21 @@ sudo chown -R nazar:nazar /home/nazar/vault
 New browsers/devices must be approved before accessing the Control UI:
 
 ```bash
-# List pending devices
-sudo -u nazar openclaw devices list
-
-# Approve by request ID
-sudo -u nazar openclaw devices approve <request-id>
-
-# Restart gateway to apply
-sudo -u nazar systemctl --user restart openclaw
+docker compose exec openclaw openclaw devices list
+docker compose exec openclaw openclaw devices approve <request-id>
 ```
 
-### Bash Aliases (as debian user)
+### Helper Commands
 
-| Alias | Command | Purpose |
-|-------|---------|---------|
-| `nazar-status` | Service status check | Quick health check |
-| `nazar-logs` | View OpenClaw logs | Debug issues |
-| `nazar-restart` | Restart OpenClaw | Apply config changes |
+| Command | Purpose |
+|---------|---------|
+| `nazar-cli status` | Service status check |
+| `nazar-cli logs` | View logs |
+| `nazar-cli restart` | Restart services |
+| `nazar-cli backup` | Create backup |
+| `nazar-cli token` | Show gateway token |
+| `nazar-cli tunnel` | Show SSH tunnel command |
+| `nazar-cli syncthing-id` | Show Syncthing Device ID |
 
 ---
 
@@ -369,11 +435,13 @@ sudo -u nazar systemctl --user restart openclaw
 
 | Want to... | Do this |
 |------------|---------|
-| Add a new skill | Create folder in `vault/99-system/openclaw/skills/` |
-| Change agent personality | Edit `vault/99-system/openclaw/workspace/SOUL.md` |
-| Add an LLM provider | Run `sudo -u nazar openclaw configure` |
-| Add a channel | Run `sudo -u nazar openclaw configure` |
-| Change vault structure | Rename folders, update skills |
+| Add a new skill | Create folder in `~/nazar/.openclaw/workspace/skills/` |
+| Change agent personality | Edit `~/nazar/.openclaw/workspace/SOUL.md` |
+| Add an LLM provider | Run `nazar-cli configure` |
+| Add a channel | Run `nazar-cli configure` |
+| Change vault structure | Rename folders in `~/nazar/vault/`, update skills |
+| Customize Docker | Edit `~/nazar/docker/docker-compose.yml` |
+| Add extra packages | Set `OPENCLAW_EXTRA_PACKAGES` in `.env` |
 
 ---
 

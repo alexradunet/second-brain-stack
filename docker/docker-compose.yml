@@ -1,0 +1,259 @@
+# =============================================================================
+# Nazar Second Brain - Docker Compose Configuration
+# Single debian user + Docker containers
+# OpenClaw + Syncthing with shared vault volume
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # OpenClaw Gateway - AI Agent Interface
+  # ===========================================================================
+  openclaw:
+    build:
+      context: .
+      dockerfile: Dockerfile.openclaw
+      args:
+        # Optional: Install extra apt packages during build
+        EXTRA_PACKAGES: "${OPENCLAW_EXTRA_PACKAGES:-}"
+    container_name: nazar-openclaw
+    hostname: nazar-openclaw
+    restart: unless-stopped
+    
+    # Security: Run as non-root user (matches debian user UID)
+    user: "${CONTAINER_UID:-1000}:${CONTAINER_GID:-1000}"
+    
+    # Network mode depends on deployment
+    networks:
+      - nazar-internal
+    
+    volumes:
+      # Shared vault - the heart of the system
+      - nazar-vault:/vault:rw
+      
+      # OpenClaw configuration (persistent)
+      - openclaw-config:/home/node/.openclaw:rw
+      
+      # OpenClaw workspace (skills, memory, SOUL.md, etc.)
+      - openclaw-workspace:/home/node/.openclaw/workspace:rw
+      
+      # Optional: Mount host docker socket for agent sandboxing
+      # Uncomment if you want agent sandboxing with Docker
+      # - /var/run/docker.sock:/var/run/docker.sock:ro
+    
+    environment:
+      # Core paths
+      - VAULT_PATH=/vault
+      - HOME=/home/node
+      
+      # Node environment
+      - NODE_ENV=production
+      
+      # Gateway configuration
+      - OPENCLAW_GATEWAY_BIND=${OPENCLAW_GATEWAY_BIND:-0.0.0.0}
+      - OPENCLAW_GATEWAY_PORT=${OPENCLAW_GATEWAY_PORT:-18789}
+      
+      # Optional: API keys (better to use .env file or configure via CLI)
+      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    
+    # Port mapping depends on deployment mode
+    ports:
+      # Default: bind to localhost only (secure, requires SSH tunnel)
+      # Change to "${OPENCLAW_GATEWAY_PORT}:18789" to expose on all interfaces
+      - "127.0.0.1:${OPENCLAW_GATEWAY_PORT:-18789}:18789"
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "openclaw", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/tmp
+    
+    command: >
+      sh -c "
+        openclaw gateway
+        --bind $${OPENCLAW_GATEWAY_BIND}
+        --port $${OPENCLAW_GATEWAY_PORT}
+        --allow-unconfigured
+      "
+
+  # ===========================================================================
+  # Syncthing - Continuous File Synchronization
+  # ===========================================================================
+  syncthing:
+    image: syncthing/syncthing:latest
+    container_name: nazar-syncthing
+    hostname: nazar-syncthing
+    restart: unless-stopped
+    
+    # Security: Run as debian user UID
+    user: "${CONTAINER_UID:-1000}:${CONTAINER_GID:-1000}"
+    
+    networks:
+      - nazar-internal
+    
+    ports:
+      # Syncthing web UI - bind to localhost only
+      # Access via SSH tunnel or Tailscale
+      - "127.0.0.1:8384:8384"
+      
+      # Syncthing sync protocol - required for device-to-device sync
+      # These can be firewalled if only using Tailscale
+      - "22000:22000/tcp"
+      - "22000:22000/udp"
+      
+      # Local discovery
+      - "21027:21027/udp"
+    
+    volumes:
+      # Shared vault - synchronized across devices
+      - nazar-vault:/var/syncthing/vault:rw
+      
+      # Syncthing configuration and database
+      - syncthing-config:/var/syncthing/config:rw
+    
+    environment:
+      # Run as user 1000:1000 (matches debian user)
+      - PUID=${CONTAINER_UID:-1000}
+      - PGID=${CONTAINER_GID:-1000}
+      
+      # Syncthing home
+      - STHOME=/var/syncthing/config
+      
+      # Disable automatic upgrades (managed via Docker)
+      - STNOUPGRADE=1
+      
+      # GUI listen address
+      - STGUIADDRESS=0.0.0.0:8384
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8384/rest/system/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # ===========================================================================
+  # Tailscale Sidecar (Optional - for Tailscale deployment mode)
+  # ===========================================================================
+  # Uncomment this service if using DEPLOYMENT_MODE=tailscale
+  # ===========================================================================
+  # tailscale:
+  #   image: tailscale/tailscale:latest
+  #   container_name: nazar-tailscale
+  #   hostname: ${TAILSCALE_HOSTNAME:-nazar}
+  #   restart: unless-stopped
+  #   
+  #   cap_add:
+  #     - NET_ADMIN
+  #     - NET_RAW
+  #   
+  #   sysctls:
+  #     - net.ipv4.ip_forward=1
+  #     - net.ipv6.conf.all.forwarding=1
+  #   
+  #   volumes:
+  #     - tailscale-state:/var/lib/tailscale:rw
+  #     - /dev/net/tun:/dev/net/tun
+  #   
+  #   environment:
+  #     - TS_AUTHKEY=${TAILSCALE_AUTHKEY:-}
+  #     - TS_ACCEPT_DNS=true
+  #     - TS_USERSPACE=false
+  #   
+  #   networks:
+  #     - nazar-internal
+  #   
+  #   healthcheck:
+  #     test: ["CMD", "tailscale", "status"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 10s
+  #   
+  #   command: tailscaled
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  nazar-internal:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# =============================================================================
+# Volumes (Persistent Storage)
+# =============================================================================
+volumes:
+  # Shared vault - synchronized between OpenClaw and Syncthing
+  nazar-vault:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${VAULT_HOST_PATH:-/home/debian/nazar/vault}
+  
+  # OpenClaw configuration
+  openclaw-config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${OPENCLAW_CONFIG_PATH:-/home/debian/nazar/.openclaw}
+  
+  # OpenClaw workspace
+  openclaw-workspace:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${OPENCLAW_WORKSPACE_PATH:-/home/debian/nazar/.openclaw/workspace}
+  
+  # Syncthing configuration
+  syncthing-config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${SYNCTHING_CONFIG_PATH:-/home/debian/nazar/syncthing/config}
+  
+  # Tailscale state (optional)
+  # tailscale-state:
+  #   driver: local
+  #   driver_opts:
+  #     type: none
+  #     o: bind
+  #     device: ${TAILSCALE_STATE_PATH:-/home/debian/nazar/tailscale}

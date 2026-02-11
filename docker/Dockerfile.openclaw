@@ -1,0 +1,81 @@
+# =============================================================================
+# Nazar Second Brain - OpenClaw Dockerfile
+# Customized for Docker-based vault synchronization
+# =============================================================================
+
+FROM node:22-bookworm-slim
+
+# Build arguments
+ARG EXTRA_PACKAGES=""
+
+# Metadata
+LABEL maintainer="Nazar Second Brain"
+LABEL description="OpenClaw Gateway for Nazar Second Brain"
+LABEL version="1.0.0"
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Core utilities
+    curl \
+    ca-certificates \
+    git \
+    jq \
+    openssl \
+    \
+    # Voice processing dependencies (optional)
+    ffmpeg \
+    \
+    # Build dependencies (if needed for native modules)
+    python3 \
+    make \
+    g++ \
+    \
+    # Extra packages (customizable at build time)
+    ${EXTRA_PACKAGES} \
+    \
+    # Clean up
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create non-root user (matches Syncthing container)
+# node user already exists from base image (UID 1000)
+# Ensure proper home directory setup
+RUN mkdir -p /home/node/.openclaw /home/node/workspace \
+    && chown -R node:node /home/node
+
+# Set working directory
+WORKDIR /app
+
+# Install OpenClaw globally
+RUN npm install -g openclaw@latest
+
+# Install Bun (used by some OpenClaw features)
+RUN curl -fsSL https://bun.sh/install | bash \
+    && mv /root/.bun /home/node/.bun \
+    && chown -R node:node /home/node/.bun
+
+# Add Bun to PATH
+ENV PATH="/home/node/.bun/bin:${PATH}"
+
+# Create directories for vault access
+RUN mkdir -p /vault \
+    && chown -R node:node /vault
+
+# Switch to non-root user
+USER node:node
+
+# Set environment
+ENV NODE_ENV=production
+ENV VAULT_PATH=/vault
+ENV OPENCLAW_WORKSPACE=/home/node/workspace
+ENV HOME=/home/node
+
+# Expose gateway port
+EXPOSE 18789
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD openclaw health || exit 1
+
+# Default command
+CMD ["openclaw", "gateway"]
