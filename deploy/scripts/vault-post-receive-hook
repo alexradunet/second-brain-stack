@@ -1,39 +1,27 @@
 #!/bin/bash
-# post-receive hook for the vault bare repo
-# Deploys pushed content to the vault working copy
-# Preserves uncommitted agent writes (auto-commit cron picks those up)
-set -uo pipefail
+# Post-receive hook: update working copy after push
+# Fixes permissions automatically (files may be owned by root from Docker)
 
-VAULT_WORK="${VAULT_DIR:-/srv/nazar/vault}"
-LOG="${NAZAR_DATA_DIR:-/srv/nazar/data}/git-sync.log"
+VAULT_DIR=/srv/nazar/vault
+LOG_FILE=/srv/nazar/data/git-sync.log
 
-log() { echo "$(date '+%Y-%m-%d %H:%M:%S') post-receive: $*" >> "$LOG"; }
+echo "$(date): Received push, updating working copy..." >> "$LOG_FILE"
 
-log "push received"
+# Fix permissions first (files may be owned by root from Docker container)
+chown -R debian:vault "$VAULT_DIR" 2>/dev/null || true
+chmod -R u+rw "$VAULT_DIR" 2>/dev/null || true
 
-cd "$VAULT_WORK" || { log "ERROR: cannot cd to $VAULT_WORK"; exit 1; }
-
-# Stash any uncommitted agent writes
-STASH_NEEDED=false
-if ! git diff --quiet || ! git diff --cached --quiet; then
-    STASH_NEEDED=true
-    git stash --quiet --include-untracked 2>>"$LOG"
-    log "stashed uncommitted agent writes"
+# Update working copy
+if cd "$VAULT_DIR"; then
+    git --git-dir=/srv/nazar/vault.git --work-tree="$VAULT_DIR" checkout -f main >> "$LOG_FILE" 2>&1
+    
+    # Fix permissions again after checkout (new files may have wrong ownership)
+    chown -R debian:vault "$VAULT_DIR" 2>/dev/null || true
+    chmod -R u+rw "$VAULT_DIR" 2>/dev/null || true
+    find "$VAULT_DIR" -type d -exec chmod 2775 {} + 2>/dev/null || true
+    
+    echo "$(date): Working copy updated" >> "$LOG_FILE"
+else
+    echo "$(date): ERROR - Could not cd to $VAULT_DIR" >> "$LOG_FILE"
+    exit 1
 fi
-
-# Fast-forward working copy to match what was pushed
-BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "main")
-git fetch origin "$BRANCH" 2>>"$LOG"
-git reset --hard "origin/$BRANCH" 2>>"$LOG"
-log "working copy updated to $(git rev-parse --short HEAD)"
-
-# Re-apply stashed agent writes
-if [ "$STASH_NEEDED" = true ]; then
-    if git stash pop --quiet 2>>"$LOG"; then
-        log "re-applied stashed agent writes"
-    else
-        log "WARNING: stash pop had conflicts — agent writes in stash, resolve manually"
-    fi
-fi
-
-log "done"

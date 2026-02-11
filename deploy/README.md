@@ -58,7 +58,7 @@ sudo VAULT_GIT_REMOTE=git@github.com:youruser/vault.git bash scripts/setup-vps.s
 | `.env.example` | Secrets template |
 | `.nazar_aliases` | Bash aliases for easy command shortcuts |
 | `scripts/setup-vps.sh` | VPS bootstrap script (creates vault group, git repos, cron, starts container) |
-| `scripts/vault-post-receive-hook` | Git hook template (auto-deploys to working copy on push) |
+| `scripts/vault-post-receive-hook` | Git hook template (auto-deploys + fixes permissions on push) |
 | `scripts/vault-auto-commit.sh` | Cron script template (commits agent writes every 5 min) |
 | `scripts/vault-gitignore` | .gitignore template for the vault |
 

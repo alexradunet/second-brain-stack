@@ -89,6 +89,7 @@ The AI assistant will configure your VPS with:
 | **Vault Git Repo** | Bare repo at `/srv/nazar/vault.git` |
 | **nazar-gateway** | OpenClaw AI agent with voice processing |
 | **Auto-sync** | Git sync every 5 minutes |
+| **Permission Fix** | Post-receive hook auto-fixes Docker root ownership |
 
 ---
 
@@ -144,6 +145,24 @@ Point Obsidian to `~/nazar-vault` and install the Git plugin.
 - ✅ Customization — adapt the setup to your specific VPS provider
 - ✅ Education — understand your system as it's being built
 - ✅ Safety — the AI confirms destructive actions before executing
+
+---
+
+## Known Issues & Solutions
+
+### Git sync not working after setup
+
+If agent writes don't appear on your local machine, or you see "Permission denied" in logs:
+
+```bash
+# SSH to VPS and fix permissions
+ssh debian@100.87.216.31
+sudo chown -R debian:vault /srv/nazar/vault
+sudo chmod -R u+rw /srv/nazar/vault
+sudo find /srv/nazar/vault -type d -exec chmod 2775 {} +
+```
+
+**Cause:** OpenClaw runs in Docker as root, creating files owned by root. The post-receive hook has been updated to auto-fix this.
 
 ---
 

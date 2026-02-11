@@ -195,6 +195,35 @@ The container runs as uid 1000 — which must be a member of the `vault` group. 
 
 ## Vault Sync Issues
 
+### Post-receive hook fails with "Permission denied"
+
+**Symptom:** After pushing to the bare repo, the VPS working copy is not updated. The git-sync.log shows:
+```
+error: unable to unlink old 'filename': Permission denied
+```
+
+**Cause:** The OpenClaw agent runs inside a Docker container as root. Files it creates in the vault are owned by root, not the `debian:vault` user. When the post-receive hook tries to update the working copy, it can't modify root-owned files.
+
+**Fix:** The post-receive hook has been updated to automatically fix permissions. If you're still seeing issues, manually fix:
+
+```bash
+ssh debian@100.87.216.31
+
+# Fix ownership and permissions
+sudo chown -R debian:vault /srv/nazar/vault
+sudo chmod -R u+rw /srv/nazar/vault
+sudo find /srv/nazar/vault -type d -exec chmod 2775 {} +
+```
+
+**Prevention:** The updated post-receive hook now includes:
+```bash
+# Fix permissions first (files may be owned by root from Docker container)
+chown -R debian:vault "$VAULT_DIR" 2>/dev/null || true
+chmod -R u+rw "$VAULT_DIR" 2>/dev/null || true
+```
+
+---
+
 ### Git push rejected
 
 **Symptom:** `git push` to VPS fails with "non-fast-forward" error.

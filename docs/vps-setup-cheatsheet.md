@@ -251,6 +251,34 @@ If Tailscale is down:
 
 ---
 
+## Git Sync Architecture
+
+Understanding the sync flow helps troubleshoot issues:
+
+```
+Local Obsidian → git push → Bare Repo (vault.git) → post-receive hook → VPS Working Copy
+                                    ↑                                                   ↓
+                                    └────────── cron auto-commit ←────────────────────────┘
+```
+
+### Key Components
+
+| Component | Purpose | Location |
+|-----------|---------|----------|
+| **Bare Repo** | Central sync point | `/srv/nazar/vault.git` |
+| **Post-receive Hook** | Updates VPS working copy on every push | `/srv/nazar/vault.git/hooks/post-receive` |
+| **Auto-commit Script** | Commits agent writes every 5 min | `/srv/nazar/scripts/vault-auto-commit.sh` |
+| **Cron Job** | Triggers auto-commit | `crontab -l` |
+
+### Permission Handling
+
+The OpenClaw agent runs in Docker as **root**, creating files owned by root. Two mechanisms fix this:
+
+1. **Post-receive hook** — Fixes permissions on every push
+2. **Auto-commit script** — Pulls before push to handle divergent branches
+
+---
+
 ## Security Audit
 
 Run the built-in security audit:
