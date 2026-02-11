@@ -4,6 +4,48 @@ Common issues and how to fix them.
 
 ## Access Issues
 
+### SSH host key verification failed after VPS reinstall
+
+**Symptom:** When trying to SSH into your VPS, you see a scary warning like:
+
+```
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
+Someone could be eavesdropping on you right now (man-in-the-middle attack)!
+It is also possible that a host key has just been changed.
+```
+
+Followed by: `Host key verification failed.`
+
+**Cause:** When you reinstall your VPS (e.g., from the provider's control panel), the server gets a fresh OS installation with new SSH host keys. Your local SSH client remembers the *old* host key and warns you that it doesn't match — this is a security feature to protect against man-in-the-middle attacks.
+
+**Fix:** Remove the old host key from your local `known_hosts` file:
+
+```bash
+# On Windows (PowerShell/Git Bash)
+ssh-keygen -R 51.38.141.38
+
+# On Linux/macOS
+ssh-keygen -R <vps-ip-address>
+```
+
+Then reconnect and accept the new key:
+
+```bash
+ssh debian@51.38.141.38
+# Type "yes" when prompted to confirm the new host key
+```
+
+**What this means:**
+- SSH stores server fingerprints in `~/.ssh/known_hosts` to verify identity
+- After a VPS reinstall, the server legitimately has a new identity
+- The warning is expected and safe to bypass in this specific case
+- The `-R` flag removes all entries for that host from `known_hosts`
+
+---
+
 ### Can't reach gateway via Tailscale
 
 **Symptom:** `https://<tailscale-hostname>/` not loading.
