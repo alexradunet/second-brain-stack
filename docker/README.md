@@ -11,7 +11,7 @@ Docker-based deployment of OpenClaw + Syncthing with shared vault volume.
 curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/docker/setup.sh | bash
 ```
 
-See [HETZNER.md](HETZNER.md) for detailed Hetzner deployment guide.
+See [VPS-GUIDE.md](VPS-GUIDE.md) for detailed VPS deployment guide (works with OVHcloud, Hetzner, etc.).
 
 ## Architecture
 
@@ -61,7 +61,7 @@ See [HETZNER.md](HETZNER.md) for detailed Hetzner deployment guide.
 │   ├── setup-security.sh       # Security hardening script
 │   ├── nazar-cli.sh            # Management CLI
 │   ├── README.md               # This file
-│   ├── HETZNER.md              # Hetzner VPS guide
+│   ├── VPS-GUIDE.md            # VPS deployment guide
 │   ├── SECURITY.md             # Security guide
 │   └── MIGRATION.md            # Migration guide
 │
@@ -397,7 +397,7 @@ See [SECURITY.md](SECURITY.md) for detailed security information.
 
 | Document | Description |
 |----------|-------------|
-| [HETZNER.md](HETZNER.md) | Hetzner VPS deployment guide |
+| [VPS-GUIDE.md](VPS-GUIDE.md) | VPS deployment guide (OVHcloud, Hetzner, etc.) |
 | [SECURITY.md](SECURITY.md) | Security hardening and best practices |
 | [MIGRATION.md](MIGRATION.md) | Migration from systemd setup |
 

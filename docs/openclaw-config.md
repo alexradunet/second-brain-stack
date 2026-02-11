@@ -1,21 +1,27 @@
 # OpenClaw Configuration
 
-OpenClaw is the AI framework that powers the Nazar agent. This guide covers configuration for the non-Docker setup.
+OpenClaw is the AI framework that powers the Nazar agent.
 
 ## Configuration Location
 
 | File | Purpose |
 |------|---------|
-| `/home/nazar/.openclaw/openclaw.json` | Main configuration |
-| `/home/nazar/.openclaw/devices/paired.json` | Approved devices |
-| `/home/nazar/.openclaw/devices/pending.json` | Pending device approvals |
+| `~/nazar/.openclaw/openclaw.json` | Main configuration |
+| `~/nazar/.openclaw/devices/paired.json` | Approved devices |
+| `~/nazar/.openclaw/devices/pending.json` | Pending device approvals |
+| `~/nazar/.openclaw/workspace/` | Agent workspace (SOUL.md, skills, memory) |
 
 ## Initial Configuration
 
 After installation, run the setup wizard:
 
 ```bash
-sudo -u nazar openclaw configure
+# Using CLI
+nazar-cli configure
+
+# Or directly
+cd ~/nazar/docker
+docker compose exec -it openclaw openclaw configure
 ```
 
 This interactive wizard will guide you through:
@@ -31,211 +37,186 @@ This interactive wizard will guide you through:
 {
   "name": "nazar",
   "workspace": {
-    "path": "/home/nazar/vault/99-system/openclaw/workspace"
+    "path": "/home/node/.openclaw/workspace"
   },
   "sandbox": {
     "mode": "non-main"
   },
   "gateway": {
     "enabled": true,
-    "bind": "loopback",
+    "bind": "0.0.0.0",
     "port": 18789,
     "auth": {
       "type": "token",
       "token": "your-secure-token-here"
-    },
-    "tailscale": {
-      "mode": "serve"
     }
   },
-  "models": {
-    "default": {
-      "provider": "anthropic",
-      "model": "claude-sonnet-4-20250514",
-      "apiKey": "${ANTHROPIC_API_KEY}"
-    }
-  },
-  "channels": {
-    "whatsapp": {
-      "enabled": true,
-      "...": "..."
-    }
-  },
+  "models": {},
+  "channels": {},
   "tools": {
-    "allowed": ["read_file", "write_file", "edit_file", "shell", "web_search"],
+    "allowed": [
+      "read_file",
+      "write_file",
+      "edit_file",
+      "shell",
+      "web_search",
+      "task"
+    ],
     "sandbox": {
-      "binds": ["/home/nazar/vault:/vault:rw"]
+      "binds": [
+        "/vault:/vault:rw"
+      ]
     }
+  },
+  "limits": {
+    "maxConcurrentAgents": 4,
+    "maxConcurrentSubagents": 8
   }
 }
 ```
 
-### Environment Variables
+### Key Settings
 
-You can use environment variables in the config:
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `name` | Agent name | `nazar` |
+| `workspace.path` | Agent workspace path | `/home/node/.openclaw/workspace` |
+| `sandbox.mode` | Sandbox mode: `off`, `non-main`, `all` | `non-main` |
+| `gateway.bind` | Bind address | `0.0.0.0` (in container) |
+| `gateway.port` | Gateway port | `18789` |
+| `gateway.auth.token` | Access token | Auto-generated |
 
-```json
-{
-  "models": {
-    "default": {
-      "apiKey": "${ANTHROPIC_API_KEY}"
-    }
-  }
-}
-```
+### Sandbox Modes
 
-Set in `/home/nazar/.openclaw/.env`:
-```bash
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
-```
-
-## Service Management
-
-### Start/Stop/Restart
-
-```bash
-# As debian user with sudo
-sudo -u nazar systemctl --user start openclaw
-sudo -u nazar systemctl --user stop openclaw
-sudo -u nazar systemctl --user restart openclaw
-
-# Or use helper alias (as debian)
-nazar-restart
-```
-
-### Check Status
-
-```bash
-# Service status
-sudo -u nazar systemctl --user status openclaw
-
-# View logs
-sudo -u nazar journalctl --user -u openclaw -f
-
-# Or use helper
-nazar-logs
-```
-
-### Enable/Disable Auto-start
-
-```bash
-# Enable (starts on boot)
-sudo -u nazar systemctl --user enable openclaw
-
-# Disable
-sudo -u nazar systemctl --user disable openclaw
-```
+- `off`: No sandboxing
+- `non-main`: Sandbox non-main sessions (group chats)
+- `all`: Sandbox all sessions
 
 ## Device Pairing
 
-The first time you access the web UI from a new browser, you need to approve the device.
+New devices must be approved before accessing the Control UI.
 
 ### List Pending Devices
 
 ```bash
-sudo -u nazar openclaw devices list
+docker compose exec openclaw openclaw devices list
 ```
 
 ### Approve a Device
 
 ```bash
-sudo -u nazar openclaw devices approve <request-id>
+docker compose exec openclaw openclaw devices approve <request-id>
 ```
 
-### Manual Approval (via files)
+## Gateway Access
+
+### Via SSH Tunnel (Recommended)
 
 ```bash
-# View pending
-sudo -u nazar cat ~/.openclaw/devices/pending.json
+# On laptop
+ssh -N -L 18789:localhost:18789 debian@vps-ip
 
-# Copy to paired
-sudo -u nazar cp ~/.openclaw/devices/pending.json ~/.openclaw/devices/paired.json
-
-# Restart gateway
-sudo -u nazar systemctl --user restart openclaw
+# Then open: http://localhost:18789
 ```
 
-## Access URLs
+### Via Tailscale
 
-| URL | Description |
-|-----|-------------|
-| `https://<tailscale-hostname>/` | Main gateway (web UI) |
-| `http://localhost:18789/` | Local access (on VPS) |
+If using Tailscale mode, access via:
+```
+https://nazar/
+```
+
+## API Keys
+
+API keys are stored encrypted in the OpenClaw configuration. Set them via:
+
+```bash
+# Interactive configuration
+docker compose exec -it openclaw openclaw configure
+
+# Or set environment variable in .env
+echo "ANTHROPIC_API_KEY=sk-ant-..." >> ~/nazar/docker/.env
+docker compose restart openclaw
+```
 
 ## Troubleshooting
 
 ### Gateway Won't Start
 
-Check logs:
 ```bash
-sudo -u nazar journalctl --user -u openclaw -n 50
+# Check config validity
+docker compose exec openclaw cat /home/node/.openclaw/openclaw.json | jq .
+
+# Check logs
+docker compose logs -f openclaw
+
+# Verify token
+docker compose exec openclaw cat /home/node/.openclaw/openclaw.json | grep token
 ```
 
-Common issues:
-- **Port already in use**: Check `sudo ss -tlnp | grep 18789`
-- **Missing config**: Verify `~/.openclaw/openclaw.json` exists
-- **Invalid JSON**: Validate with `jq . ~/.openclaw/openclaw.json`
+### Can't Access Gateway
 
-### Can't Access Web UI
-
-1. Check Tailscale is running:
-   ```bash
-   tailscale status
-   ```
-
-2. Verify gateway is listening:
-   ```bash
-   sudo -u nazar ss -tlnp | grep 18789
-   ```
-
-3. Check Tailscale serve status:
-   ```bash
-   tailscale serve status
-   ```
-
-### Voice Processing Not Working
-
-Ensure the voice venv is set up:
 ```bash
-sudo -u nazar bash -c '
-    source ~/.local/venv-voice/bin/activate
-    which whisper
-    which piper
-'
+# Check if container is running
+docker compose ps
+
+# Verify port binding
+docker compose exec openclaw netstat -tlnp
+
+# Test health
+docker compose exec openclaw openclaw health
 ```
 
-### Reset Configuration
+### Regenerate Token
 
 ```bash
-# Backup first
-sudo -u nazar cp -r ~/.openclaw ~/.openclaw.bak.$(date +%Y%m%d)
-
-# Reset
-sudo -u nazar rm -rf ~/.openclaw
-sudo -u nazar mkdir -p ~/.openclaw
-
-# Re-run setup
-sudo -u nazar openclaw configure
+# Generate new token
+TOKEN=$(openssl rand -hex 32)
+docker compose exec openclaw \
+    sed -i "s/\"token\": \"[^\"]*\"/\"token\": \"$TOKEN\"/" \
+    /home/node/.openclaw/openclaw.json
+docker compose restart openclaw
+echo "New token: $TOKEN"
 ```
 
-## CLI Reference
+## Advanced Configuration
+
+### Custom Workspace Path
+
+The workspace path in the container is fixed at `/home/node/.openclaw/workspace`, but you can change the host path in `docker-compose.yml`:
+
+```yaml
+volumes:
+  - /custom/path:/home/node/.openclaw/workspace:rw
+```
+
+### Environment Variables
+
+Set in `~/nazar/docker/.env`:
 
 ```bash
-# Configuration
-openclaw configure              # Interactive setup wizard
-openclaw doctor                 # Health check
-openclaw doctor --fix           # Auto-fix issues
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
+```
 
-# Devices
-openclaw devices list           # List connected/pending devices
-openclaw devices approve <id>   # Approve pending device
+### Custom Tools
 
-# Gateway
-openclaw gateway status         # Gateway status
-openclaw gateway logs           # Gateway logs
+Add custom tool bindings in `openclaw.json`:
 
-# Help
-openclaw --help
-openclaw <command> --help
+```json
+{
+  "tools": {
+    "sandbox": {
+      "binds": [
+        "/vault:/vault:rw",
+        "/custom/path:/custom:ro"
+      ]
+    }
+  }
+}
+```
+
+Restart after changes:
+```bash
+docker compose restart openclaw
 ```

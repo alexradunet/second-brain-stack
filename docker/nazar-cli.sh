@@ -76,6 +76,7 @@ COMMANDS:
     restore <file>      Restore from backup
     syncthing-id        Show Syncthing Device ID
     tunnel              Show SSH tunnel command
+    security            Run security audit
     vault               Open vault directory
     clean               Remove unused Docker resources
     help                Show this help message

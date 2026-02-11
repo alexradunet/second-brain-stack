@@ -1,21 +1,31 @@
-# Hetzner VPS Deployment Guide
+# VPS Deployment Guide
 
-Complete guide for running Nazar Second Brain on Hetzner Cloud VPS using Docker.
+Complete guide for running Nazar Second Brain on a VPS (Hetzner, OVHcloud, or any Debian/Ubuntu VPS).
+
+## Providers
+
+This guide works with:
+
+- **OVHcloud** (VPS Starter ~€3.50/month, VPS Value ~€5.50/month)
+- **Hetzner** (CX11 ~€4.51/month)
+- **DigitalOcean, Linode, Vultr, etc.**
+- **Any Debian 12+ or Ubuntu 22.04+ VPS**
 
 ## Overview
 
-This guide deploys OpenClaw + Syncthing on a Hetzner VPS with:
+Deploy OpenClaw + Syncthing with:
+
 - **Single user**: `debian` (admin) - no separate service user needed
 - **Docker isolation**: All services run in containers
 - **SSH tunnel access**: Secure access without exposing ports
 - **Persistent state**: Vault and configs survive container restarts
-- **~$5/month**: Hetzner CX11 (1 vCPU, 2GB RAM) or similar
+- **~$5/month**: 1 vCPU, 2GB RAM VPS
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     Hetzner VPS                                 │
+│                     VPS (OVH/Hetzner/etc)                       │
 │                                                                 │
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │                    Docker Engine                        │   │
@@ -47,36 +57,51 @@ This guide deploys OpenClaw + Syncthing on a Hetzner VPS with:
                     └─────────────────┘
 ```
 
-## Prerequisites
+## Provider-Specific Setup
 
-- Hetzner Cloud account
-- SSH key added to Hetzner
-- Local machine with SSH client
+### OVHcloud
 
-## Step 1: Provision VPS
+1. **Order VPS** from [OVHcloud Control Panel](https://ca.ovh.com/manager/):
+   - **Range**: VPS Starter or VPS Value
+   - **Location**: Closest to you
+   - **OS**: Debian 13 or Ubuntu 22.04
+   - **Options**: Enable backup (recommended)
 
-1. **Create Server** in Hetzner Console:
-   - **Location**: Closest to you (e.g., Nuremberg, Falkenstein)
+2. **Access via KVM** (if needed):
+   - OVHcloud provides KVM console in control panel
+   - Useful if you lock yourself out of SSH
+
+3. **Note**: OVHcloud VPS comes with root account only initially
+
+### Hetzner
+
+1. **Create Server** in [Hetzner Console](https://console.hetzner.cloud/):
+   - **Location**: Closest to you (Nuremberg, Falkenstein, etc.)
    - **Image**: Ubuntu 22.04 or Debian 12
-   - **Type**: CX11 (1 vCPU, 2GB RAM, ~€4.51/month)
+   - **Type**: CX11 (1 vCPU, 2GB RAM)
    - **SSH Key**: Select your key
-   - **Name**: `nazar` (or your preference)
 
 2. **Wait for provisioning** (takes ~1 minute)
 
-3. **Note the IP address** (e.g., `78.46.x.x`)
+### Other Providers
 
-## Step 2: Initial Server Setup
+- **DigitalOcean**: Create droplet with Debian 12
+- **Linode**: Create instance with Ubuntu 22.04
+- **Vultr**: Deploy Debian 12 cloud instance
 
-Connect and run setup:
+## Step 1: Initial Server Setup
+
+Connect as root and create `debian` user:
 
 ```bash
-# SSH into the VPS
+# SSH into the VPS as root
 ssh root@YOUR_VPS_IP
 
-# Create debian user (if not exists) and set up SSH
+# Create debian user
 adduser debian
 usermod -aG sudo debian
+
+# Set up SSH keys for debian user
 mkdir -p /home/debian/.ssh
 cp /root/.ssh/authorized_keys /home/debian/.ssh/
 chown -R debian:debian /home/debian/.ssh
@@ -84,15 +109,13 @@ chmod 700 /home/debian/.ssh
 chmod 600 /home/debian/.ssh/authorized_keys
 
 # Optional but recommended: Run security hardening
-# This script implements OVHcloud security best practices
-curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/docker/setup-security.sh -o /tmp/setup-security.sh
-sudo bash /tmp/setup-security.sh
+curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/docker/setup-security.sh | bash
 
 # Switch to debian user
 su - debian
 ```
 
-## Step 3: Install Docker
+## Step 2: Install Docker
 
 ```bash
 # Update and install dependencies
@@ -105,18 +128,14 @@ curl -fsSL https://get.docker.com | sh
 # Add debian user to docker group
 sudo usermod -aG docker debian
 
-# Verify (logout and login again for group change)
+# Verify
+logout
+ssh debian@YOUR_VPS_IP
 docker --version
 docker compose version
 ```
 
-**Logout and login again** for docker group to take effect:
-```bash
-exit
-ssh debian@YOUR_VPS_IP
-```
-
-## Step 4: Deploy Nazar Second Brain
+## Step 3: Deploy Nazar Second Brain
 
 ### Option A: Quick Deploy (Recommended)
 
@@ -124,10 +143,9 @@ ssh debian@YOUR_VPS_IP
 # Download and run setup script
 curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/docker/setup.sh | bash
 
-# Or clone and run
-git clone https://github.com/alexradunet/easy-para-system-claw-vps.git ~/nazar-repo
-cd ~/nazar-repo/docker
-bash setup.sh
+# Follow the prompts for:
+# - Deployment mode (SSH tunnel or Tailscale)
+# - Security hardening (recommended: yes)
 ```
 
 ### Option B: Manual Deploy
@@ -158,11 +176,10 @@ CONTAINER_UID=1000
 CONTAINER_GID=1000
 EOF
 
-# Generate token
+# Generate token and create config
+mkdir -p ~/nazar/.openclaw/workspace
 TOKEN=$(openssl rand -hex 32)
 
-# Create OpenClaw config
-mkdir -p ~/nazar/.openclaw/workspace
 cat > ~/nazar/.openclaw/openclaw.json << EOF
 {
   "name": "nazar",
@@ -191,30 +208,24 @@ chown -R 1000:1000 ~/nazar
 docker compose up -d --build
 ```
 
-## Step 5: Access Services
+## Step 4: Access Services
 
 ### Open SSH Tunnel (on your laptop)
 
 ```bash
-# Single tunnel for OpenClaw
-ssh -N -L 18789:localhost:18789 debian@YOUR_VPS_IP
-
-# Single tunnel for Syncthing
-ssh -N -L 8384:localhost:8384 debian@YOUR_VPS_IP
-
 # Both services at once
 ssh -N -L 18789:localhost:18789 -L 8384:localhost:8384 debian@YOUR_VPS_IP
 
-# Background mode (add -f)
+# Background mode
 ssh -f -N -L 18789:localhost:18789 -L 8384:localhost:8384 debian@YOUR_VPS_IP
 ```
 
 ### Access Services
 
-| Service | URL (with tunnel) |
-|---------|-------------------|
+| Service          | URL (with tunnel)      |
+| ---------------- | ---------------------- |
 | OpenClaw Gateway | http://localhost:18789 |
-| Syncthing GUI | http://localhost:8384 |
+| Syncthing GUI    | http://localhost:8384  |
 
 ### Get Gateway Token
 
@@ -227,9 +238,10 @@ docker compose exec openclaw cat /home/node/.openclaw/openclaw.json | grep token
 ./nazar-cli.sh token
 ```
 
-## Step 6: Syncthing Setup
+## Step 5: Syncthing Setup
 
 1. **Get VPS Device ID**:
+
    ```bash
    cd ~/nazar/docker
    docker compose exec syncthing syncthing cli show system | grep myID
@@ -246,7 +258,7 @@ docker compose exec openclaw cat /home/node/.openclaw/openclaw.json | grep token
    - Accept folder share
    - Set folder path to `/var/syncthing/vault`
 
-## Step 7: Configure OpenClaw
+## Step 6: Configure OpenClaw
 
 ```bash
 # Run configuration wizard
@@ -256,120 +268,62 @@ docker compose exec -it openclaw openclaw configure
 # Configure LLM providers, channels, etc.
 ```
 
-## Management Commands
+## Security Hardening
 
-### Install CLI Helper
-
-```bash
-cd ~/nazar/docker
-chmod +x nazar-cli.sh
-sudo ln -s $(pwd)/nazar-cli.sh /usr/local/bin/nazar-cli
-
-# Now you can use:
-nazar-cli status
-nazar-cli logs
-nazar-cli restart
-nazar-cli backup
-nazar-cli tunnel  # Show SSH tunnel commands
-```
-
-### Docker Compose Directly
+The automated security script implements OVHcloud best practices:
 
 ```bash
-cd ~/nazar/docker
-
-# Status
-docker compose ps
-
-# Logs
-docker compose logs -f
-docker compose logs -f openclaw
-
-# Start/Stop/Restart
-docker compose up -d
-docker compose down
-docker compose restart
-
-# Update
-docker compose pull
-docker compose up -d --build
-```
-
-## What Persists Where
-
-| Component | Location | Notes |
-|-----------|----------|-------|
-| Vault | `~/nazar/vault` | Synced via Syncthing |
-| OpenClaw Config | `~/nazar/.openclaw/openclaw.json` | Gateway settings, tokens |
-| Agent Workspace | `~/nazar/.openclaw/workspace/` | SOUL.md, skills, memory |
-| Syncthing DB | `~/nazar/syncthing/config/` | Device connections, sync state |
-| Container state | Docker volumes | Ephemeral, rebuilt on update |
-
-## Security Hardening (Automated)
-
-The setup includes an automated security hardening script based on OVHcloud's "How to secure a VPS" guide.
-
-### Run Security Setup
-
-```bash
-# Download and run security hardening
+# Run security hardening
 curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/docker/setup-security.sh | sudo bash
-```
 
-This script implements:
-
-| Security Measure | Description |
-|-----------------|-------------|
-| **SSH Keys Only** | Disables password authentication |
-| **Root Login Disabled** | Prevents direct root access |
-| **UFW Firewall** | Blocks all incoming except SSH |
-| **Fail2ban** | Blocks IPs after 3 failed login attempts |
-| **Auto-updates** | Automatic security patches |
-| **Docker Security** | Non-root container execution |
-
-### Manual Security Steps
-
-If you prefer manual configuration:
-
-```bash
-# 1. Disable Root Login
-sudo sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
-sudo systemctl restart sshd
-
-# 2. Enable UFW Firewall
-sudo apt-get install -y ufw
-sudo ufw default deny incoming
-sudo ufw allow 22/tcp comment 'SSH'
-sudo ufw --force enable
-
-# 3. Install Fail2ban
-sudo apt-get install -y fail2ban
-sudo systemctl enable fail2ban
-sudo systemctl start fail2ban
-
-# 4. Enable Auto-updates
-sudo apt-get install -y unattended-upgrades
-```
-
-### Security Audit
-
-After setup, verify security:
-
-```bash
-# Run security audit
+# Or run audit only
 sudo nazar-security-audit
-
-# Expected output:
-# ✓ Root login disabled
-# ✓ Password authentication disabled
-# ✓ Firewall (UFW) active
-# ✓ Fail2ban running
-# ✓ Auto-updates enabled
 ```
+
+Features:
+
+- SSH key authentication only
+- UFW firewall (blocks all incoming except SSH)
+- Fail2ban (blocks IPs after 3 failed attempts)
+- Automatic security updates
+
+See [SECURITY.md](SECURITY.md) for details.
+
+## Provider-Specific Features
+
+### OVHcloud Network Firewall
+
+OVHcloud provides an additional network-level firewall in the control panel:
+
+1. Go to **Network** → **Firewall**
+2. Enable firewall for your VPS
+3. Create rules:
+   - Allow TCP 22 (SSH)
+   - Deny all other incoming
+
+This provides defense in depth with UFW.
+
+### Hetzner Firewall
+
+Hetzner provides a free cloud firewall:
+
+1. Go to **Firewalls** in Hetzner Console
+2. Create firewall rules:
+   - Inbound: TCP 22 from your IP only
+   - Outbound: Allow all
+3. Apply to your server
 
 ## Backup Strategy
 
-### Automated Backup Script
+### OVHcloud Backup Option
+
+OVHcloud offers automated backup:
+
+- Enable in control panel
+- ~20% of VPS price
+- One-click restore
+
+### Automated Script Backup
 
 ```bash
 # Create backup script
@@ -391,20 +345,50 @@ docker compose up -d
 # Keep only last 7 backups
 ls -t "$BACKUP_DIR"/nazar-*.tar.gz | tail -n +8 | xargs -r rm
 
-echo "Backup completed: $BACKUP_DIR/nazar-$TIMESTAMP.tar.gz"
+echo "Backup: $BACKUP_DIR/nazar-$TIMESTAMP.tar.gz"
 EOF
 
 chmod +x ~/nazar/backup.sh
 
-# Add to crontab (daily at 3 AM)
+# Daily at 3 AM
 (crontab -l 2>/dev/null; echo "0 3 * * * /home/debian/nazar/backup.sh") | crontab -
 ```
 
-### Manual Backup
+## Management Commands
+
+### Using nazar-cli
 
 ```bash
-nazar-cli backup
-# Creates: ~/nazar/backups/nazar-backup-YYYYMMDD_HHMMSS.tar.gz
+# Install
+sudo ln -s ~/nazar/docker/nazar-cli.sh /usr/local/bin/nazar-cli
+
+# Usage
+nazar-cli status      # Show service status
+nazar-cli logs        # Show all logs
+nazar-cli restart     # Restart services
+nazar-cli backup      # Create backup
+nazar-cli token       # Show gateway token
+nazar-cli tunnel      # Show SSH tunnel command
+nazar-cli security    # Run security audit
+```
+
+### Docker Compose Directly
+
+```bash
+cd ~/nazar/docker
+
+# Start
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Stop
+docker compose down
+
+# Update
+docker compose pull
+docker compose up -d --build
 ```
 
 ## Troubleshooting
@@ -413,7 +397,6 @@ nazar-cli backup
 
 ```bash
 # Check logs
-cd ~/nazar/docker
 docker compose logs
 
 # Check disk space
@@ -431,19 +414,13 @@ ssh -N -L 18789:localhost:18789 debian@YOUR_VPS_IP
 
 # Check OpenClaw logs
 docker compose logs openclaw
-
-# Verify token
-docker compose exec openclaw cat /home/node/.openclaw/openclaw.json | grep token
 ```
 
 ### Syncthing Not Syncing
 
 ```bash
-# Check device connections
+# Check connections
 docker compose exec syncthing syncthing cli show connections
-
-# Check folder status
-docker compose exec syncthing syncthing cli show folder status nazar-vault
 
 # Restart Syncthing
 docker compose restart syncthing
@@ -451,7 +428,7 @@ docker compose restart syncthing
 
 ### Out of Memory
 
-If using CX11 (2GB RAM) and hitting OOM:
+If hitting OOM on 2GB VPS:
 
 ```bash
 # Add swap
@@ -461,30 +438,30 @@ sudo mkswap /swapfile
 sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 
-# Or upgrade to CX21 (2 vCPU, 4GB RAM)
+# Or upgrade VPS tier
 ```
 
-## Upgrading VPS
+## Cost Comparison
 
-If you need more resources:
+| Provider         | Plan        | Specs           | Monthly Cost |
+| ---------------- | ----------- | --------------- | ------------ |
+| **OVHcloud**     | VPS Starter | 1 vCPU, 2GB RAM | ~€3.50       |
+| **OVHcloud**     | VPS Value   | 2 vCPU, 4GB RAM | ~€5.50       |
+| **Hetzner**      | CX11        | 1 vCPU, 2GB RAM | ~€4.51       |
+| **Hetzner**      | CX21        | 2 vCPU, 4GB RAM | ~€8.21       |
+| **DigitalOcean** | Basic       | 1 vCPU, 2GB RAM | ~$6          |
+| **Linode**       | Nanode      | 1 vCPU, 1GB RAM | ~$5          |
 
-1. **Power off server** in Hetzner Console
-2. **Resize** to larger type (e.g., CX21)
-3. **Power on**
-4. **Restart services**:
-   ```bash
-   cd ~/nazar/docker
-   docker compose up -d
-   ```
-
-## Migration to New Server
+## Migration Between Providers
 
 1. **Backup on old server**:
+
    ```bash
    nazar-cli backup
    ```
 
 2. **Download backup**:
+
    ```bash
    scp debian@old-vps:~/nazar/backups/nazar-backup-*.tar.gz .
    ```
@@ -496,22 +473,14 @@ If you need more resources:
    nazar-cli restore nazar-backup-*.tar.gz
    ```
 
-## Cost Optimization
-
-| Component | Monthly Cost |
-|-----------|-------------|
-| Hetzner CX11 | ~€4.51 |
-| Hetzner CX21 | ~€8.21 |
-| Tailscale (free tier) | Free |
-| Total (CX11) | ~$5 USD |
-
 ## Resources
 
-- [Hetzner Cloud Console](https://console.hetzner.cloud/)
+- [OVHcloud VPS Documentation](https://docs.ovh.com/gb/en/vps/)
+- [Hetzner Cloud Docs](https://docs.hetzner.com/cloud/)
 - [OpenClaw Documentation](https://github.com/openclaw/openclaw)
 - [Syncthing Documentation](https://docs.syncthing.net/)
 - [Project Repository](https://github.com/alexradunet/easy-para-system-claw-vps)
 
 ---
 
-*For issues or contributions, see the main project repository.*
+_For issues or contributions, see the main project repository._

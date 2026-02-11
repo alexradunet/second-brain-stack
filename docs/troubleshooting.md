@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Common issues and their solutions.
+Common issues and their solutions for the Docker-based setup.
 
 ## Quick Diagnostics
 
@@ -8,13 +8,14 @@ Run this to check everything:
 
 ```bash
 #!/bin/bash
-echo "=== Tailscale ==="
-tailscale status 2>/dev/null || echo "Tailscale not running"
+cd ~/nazar/docker
+
+echo "=== Docker Containers ==="
+docker compose ps
 
 echo ""
-echo "=== Services ==="
-sudo -u nazar systemctl --user is-active openclaw 2>/dev/null && echo "✓ OpenClaw" || echo "✗ OpenClaw"
-sudo -u nazar systemctl --user is-active syncthing 2>/dev/null && echo "✓ Syncthing" || echo "✗ Syncthing"
+echo "=== Container Logs (last 20 lines) ==="
+docker compose logs --tail=20
 
 echo ""
 echo "=== Firewall ==="
@@ -22,11 +23,57 @@ sudo ufw status | head -5
 
 echo ""
 echo "=== Disk Space ==="
-df -h /home/nazar | tail -1
+df -h ~ | tail -1
 
 echo ""
 echo "=== Memory ==="
 free -h | grep Mem
+
+echo ""
+echo "=== Security Audit ==="
+sudo nazar-security-audit 2>/dev/null || echo "Run: sudo nazar-cli security"
+```
+
+## Docker Issues
+
+### Containers Won't Start
+
+**Symptom**: `docker compose up` fails or containers exit immediately
+
+**Check**:
+```bash
+# View logs
+docker compose logs
+
+# Check disk space
+df -h
+
+# Check permissions
+ls -la ~/nazar/
+```
+
+**Fix**:
+```bash
+# Fix ownership (containers run as UID 1000)
+sudo chown -R 1000:1000 ~/nazar
+
+# Restart containers
+docker compose restart
+
+# If still failing, try rebuild
+docker compose down
+docker compose up -d --build
+```
+
+### Permission Denied on Vault
+
+**Symptom**: OpenClaw can't read/write vault files
+
+**Fix**:
+```bash
+# Fix ownership
+sudo chown -R 1000:1000 ~/nazar/vault
+sudo chmod -R u+rw ~/nazar/vault
 ```
 
 ## Syncthing Issues
@@ -37,21 +84,23 @@ free -h | grep Mem
 
 **Check**:
 ```bash
-# 1. Tailscale connectivity
-tailscale status
-ping <other-device-tailscale-ip>
+# 1. Syncthing is running
+docker compose ps
 
-# 2. Syncthing is running
-sudo -u nazar systemctl --user status syncthing
+# 2. Syncthing is listening
+docker compose exec syncthing netstat -tlnp
 
 # 3. Device IDs are correct
-sudo -u nazar syncthing cli show system | grep myID
+docker compose exec syncthing syncthing cli show system | grep myID
+
+# 4. Check connections
+docker compose exec syncthing syncthing cli show connections
 ```
 
 **Fix**:
-- Ensure Tailscale is running on both devices
+- Ensure Syncthing is running: `docker compose up -d syncthing`
 - Re-add device IDs if changed
-- Check firewall: `sudo ufw status`
+- Check Syncthing logs: `docker compose logs -f syncthing`
 
 ### Sync Conflicts
 
@@ -71,270 +120,245 @@ sudo -u nazar syncthing cli show system | grep myID
 **Check**:
 ```bash
 # Connection type (relay vs direct)
-sudo -u nazar syncthing cli show connections | grep type
+docker compose exec syncthing syncthing cli show connections | grep type
 
 # Should show "type": "tcp-client" or "type": "tcp-server"
 # "type": "relay-client" means using relay (slower)
 ```
 
 **Fix**:
-- Ensure both devices on same Tailscale network
-- Check "Allow Direct Connections" in device settings
+- Ensure both devices are on the same network or have direct internet access
+- Check if firewall is blocking direct connections
+- Consider enabling UPnP on your router
 
 ## OpenClaw Issues
 
 ### Gateway Won't Start
 
-**Symptom**: `systemctl --user status openclaw` shows failed
+**Symptom**: Container keeps restarting or won't start
 
 **Check**:
 ```bash
-# Logs
-sudo -u nazar journalctl --user -u openclaw -n 50
+# View logs
+docker compose logs -f openclaw
 
-# Config validity
-sudo -u nazar jq . ~/.openclaw/openclaw.json
+# Check config
+docker compose exec openclaw cat /home/node/.openclaw/openclaw.json
 
-# Port in use
-sudo ss -tlnp | grep 18789
+# Validate JSON
+docker compose exec openclaw cat /home/node/.openclaw/openclaw.json | jq .
 ```
 
-**Common Fixes**:
+**Fix**:
+```bash
+# Fix invalid JSON
+# Edit ~/nazar/.openclaw/openclaw.json and fix syntax errors
 
-1. **Invalid JSON config**:
-   ```bash
-   # Backup and reset
-   sudo -u nazar cp ~/.openclaw/openclaw.json ~/.openclaw/openclaw.json.bak
-   sudo -u nazar openclaw configure
-   ```
+# Restart
+docker compose restart openclaw
+```
 
-2. **Port already in use**:
-   ```bash
-   # Find and kill process
-   sudo ss -tlnp | grep 18789
-   sudo kill <PID>
-   # Then restart
-   sudo -u nazar systemctl --user restart openclaw
-   ```
+### Can't Access Gateway
 
-3. **Missing dependencies**:
-   ```bash
-   # Reinstall OpenClaw
-   sudo npm install -g openclaw@latest
-   ```
-
-### Can't Access Web UI
-
-**Symptom**: `https://<tailscale-hostname>/` doesn't load
+**Symptom**: Connection refused or timeout
 
 **Check**:
 ```bash
-# 1. Gateway is running
-sudo -u nazar systemctl --user status openclaw
+# 1. Container is running
+docker compose ps
 
-# 2. Listening on localhost
-sudo -u nazar ss -tlnp | grep 18789
-# Should show 127.0.0.1:18789
+# 2. OpenClaw is listening
+docker compose exec openclaw netstat -tlnp
 
-# 3. Tailscale serve is working
-tailscale serve status
+# 3. SSH tunnel is active (if using SSH tunnel mode)
+# Check if you ran: ssh -L 18789:localhost:18789 debian@vps-ip
 
-# 4. Tailscale is connected
-tailscale status
+# 4. Token is correct
+docker compose exec openclaw cat /home/node/.openclaw/openclaw.json | grep token
 ```
 
 **Fix**:
-```bash
-# Restart Tailscale serve
-sudo tailscale serve --https=443 off 2>/dev/null || true
-sudo -u nazar systemctl --user restart openclaw
+- Start containers: `docker compose up -d`
+- Open SSH tunnel: `ssh -N -L 18789:localhost:18789 debian@vps-ip`
+- Check firewall: `sudo ufw status`
 
-# Check Tailscale HTTPS
-tailscale cert <hostname>.<tailnet>.ts.net
-```
-
-### Device Pairing Issues
-
-**Symptom**: "Pairing required" message in browser
+### Token Lost or Forgotten
 
 **Fix**:
 ```bash
-# List pending devices
-sudo -u nazar openclaw devices list
+# Retrieve token
+docker compose exec openclaw cat /home/node/.openclaw/openclaw.json | grep token
 
-# Approve
-sudo -u nazar openclaw devices approve <request-id>
+# Or use CLI
+nazar-cli token
 
-# Restart gateway
-sudo -u nazar systemctl --user restart openclaw
+# To generate new token:
+TOKEN=$(openssl rand -hex 32)
+docker compose exec openclaw \
+    sed -i "s/\"token\": \"[^\"]*\"/\"token\": \"$TOKEN\"/" \
+    /home/node/.openclaw/openclaw.json
+docker compose restart openclaw
+echo "New token: $TOKEN"
 ```
 
-### Voice Processing Not Working
+## SSH Tunnel Issues
 
-**Symptom**: Voice messages not transcribed
+### Can't Establish SSH Connection
+
+**Symptom**: `ssh: connect to host ... port 22: Connection refused`
 
 **Check**:
 ```bash
-# Voice venv exists
-ls -la /home/nazar/.local/venv-voice/
+# From VPS, check SSH is running
+sudo systemctl status sshd
 
-# Whisper and Piper installed
-sudo -u nazar bash -c 'source ~/.local/venv-voice/bin/activate && which whisper'
-sudo -u nazar bash -c 'source ~/.local/venv-voice/bin/activate && which piper'
+# Check SSH port
+grep "^Port" /etc/ssh/sshd_config
 
-# Models exist
-ls /home/nazar/.local/share/whisper/
+# Check firewall
+sudo ufw status
 ```
 
 **Fix**:
 ```bash
-# Reinstall voice tools
-sudo -u nazar bash -c '
-    python3 -m venv ~/.local/venv-voice
-    source ~/.local/venv-voice/bin/activate
-    pip install openai-whisper piper-tts
-'
+# If SSH service not running
+sudo systemctl start sshd
+
+# If blocked by firewall
+sudo ufw allow 22/tcp
 ```
 
-## Tailscale Issues
+### Tunnel Disconnects
 
-### Can't SSH via Tailscale
-
-**Symptom**: `ssh debian@<tailscale-ip>` hangs or fails
-
-**Check**:
-```bash
-# Tailscale status
-tailscale status
-
-# IP is correct
-tailscale ip -4
-
-# Firewall allows SSH on tailscale0
-sudo ufw status | grep tailscale0
-```
+**Symptom**: SSH tunnel drops after period of inactivity
 
 **Fix**:
 ```bash
-# Restart Tailscale
-sudo systemctl restart tailscaled
+# Use autossh for persistent tunnels
+sudo apt-get install autossh
+autossh -M 0 -N -L 18789:localhost:18789 -L 8384:localhost:8384 debian@vps-ip
 
-# Re-authenticate if needed
-sudo tailscale up --force-reauth
-
-# If locked out, use provider console to access and fix
+# Or add to SSH config (~/.ssh/config)
+Host nazar-tunnel
+    HostName vps-ip
+    User debian
+    LocalForward 18789 localhost:18789
+    LocalForward 8384 localhost:8384
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
 ```
 
-### Tailscale Not Connecting
+## Security Issues
 
-**Symptom**: `tailscale status` shows "Logged out"
+### Fail2ban Blocking Your IP
+
+**Symptom**: Can't SSH into VPS
+
+**Fix** (requires console access via provider's panel):
+```bash
+# Check banned IPs
+sudo fail2ban-client status sshd
+
+# Unban your IP
+sudo fail2ban-client set sshd unbanip <YOUR_IP>
+```
+
+### UFW Blocking Connections
+
+**Symptom**: Services inaccessible
 
 **Fix**:
 ```bash
-# Authenticate
-sudo tailscale up
+# Check status
+sudo ufw status verbose
 
-# Or if already configured
-sudo tailscale up --operator=debian
+# Reset if needed (be careful!)
+sudo ufw reset
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow 22/tcp comment 'SSH'
+sudo ufw --force enable
 ```
 
-## Permission Issues
-
-### Vault Not Writable
-
-**Symptom**: OpenClaw can't write to vault
-
-**Fix**:
-```bash
-sudo chown -R nazar:nazar /home/nazar/vault
-chmod -R u+rw /home/nazar/vault
-```
-
-### Can't Access OpenClaw Config
-
-**Fix**:
-```bash
-sudo chown -R nazar:nazar /home/nazar/.openclaw
-chmod -R u+rw /home/nazar/.openclaw
-```
-
-## System Issues
-
-### Out of Disk Space
-
-**Check**:
-```bash
-df -h /home/nazar
-du -sh /home/nazar/vault/*
-```
-
-**Fix**:
-```bash
-# Clean old Syncthing versions
-sudo -u nazar find /home/nazar/vault -name "*.sync-conflict-*" -delete
-
-# Check Syncthing versioning settings
-# Reduce "Keep Versions" in folder settings
-```
+## Performance Issues
 
 ### High Memory Usage
 
+**Symptom**: VPS running out of memory
+
 **Check**:
 ```bash
+# Memory usage
 free -h
-ps aux --sort=-%mem | head -10
-```
 
-**Common causes**:
-- Whisper model too large (use `small` or `base`)
-- Syncthing scanning large files
-- OpenClaw subagent memory leak
+# Container memory
+docker stats --no-stream
+```
 
 **Fix**:
 ```bash
-# Restart services
-sudo -u nazar systemctl --user restart openclaw
-sudo -u nazar systemctl --user restart syncthing
+# Add swap
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 
-# Use smaller Whisper model (edit voice skill config)
+# Or reduce container memory limits in docker-compose.yml
 ```
 
-### System Won't Boot
+### High CPU Usage
 
-**If you can't access the VPS:**
-1. Use provider's web console (KVM/VNC)
-2. Check disk space from recovery mode
-3. Check logs: `journalctl -xb`
+**Check**:
+```bash
+# CPU usage by container
+docker stats --no-stream
 
-**Common boot issues**:
-- Full disk (clean up from recovery)
-- Failed systemd service (mask it: `systemctl mask <service>`)
+# Top processes
+docker compose exec openclaw top
+```
+
+**Fix**:
+- Check OpenClaw logs for infinite loops
+- Restart containers: `docker compose restart`
+- Check if processing large files
+
+## Backup and Recovery
+
+### Corrupted Vault
+
+**Symptom**: Sync errors, missing files
+
+**Fix**:
+1. Stop Syncthing: `docker compose stop syncthing`
+2. Restore from backup:
+   ```bash
+   cd ~
+   tar -xzf nazar/backups/nazar-backup-*.tar.gz
+   ```
+3. Fix permissions: `sudo chown -R 1000:1000 ~/nazar`
+4. Restart: `docker compose up -d`
+
+### Lost Configuration
+
+**Fix**:
+```bash
+# If .openclaw directory is lost
+# 1. Regenerate config
+mkdir -p ~/nazar/.openclaw/workspace
+
+# 2. Create new openclaw.json with setup script
+# Or manually create minimal config
+
+# 3. Reconfigure
+docker compose exec -it openclaw openclaw configure
+```
 
 ## Getting Help
 
-If none of these solutions work:
+If issues persist:
 
-1. **Check logs**:
-   ```bash
-   # OpenClaw
-   sudo -u nazar journalctl --user -u openclaw -n 100
-   
-   # Syncthing
-   sudo -u nazar journalctl --user -u syncthing -n 100
-   
-   # System
-   sudo journalctl -n 100
-   ```
-
-2. **Check OpenClaw documentation**:
-   ```bash
-   openclaw --help
-   openclaw doctor
-   ```
-
-3. **Restart everything** (nuclear option):
-   ```bash
-   sudo systemctl restart tailscaled
-   sudo -u nazar systemctl --user restart syncthing
-   sudo -u nazar systemctl --user restart openclaw
-   ```
+1. **Check logs**: `docker compose logs -f`
+2. **Run diagnostics**: `nazar-cli status`
+3. **Security audit**: `nazar-cli security`
+4. **Open issue**: Include logs and diagnostics output

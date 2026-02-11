@@ -7,7 +7,7 @@ Welcome to the Nazar Second Brain documentation.
 | Document | Description |
 |----------|-------------|
 | [../README.md](../README.md) | Project overview and quick start |
-| [../README-BOOTSTRAP.md](../README-BOOTSTRAP.md) | VPS bootstrap guide |
+| [../docker/VPS-GUIDE.md](../docker/VPS-GUIDE.md) | VPS deployment guide |
 | [syncthing-setup.md](syncthing-setup.md) | Configure vault sync |
 | [openclaw-config.md](openclaw-config.md) | Configure AI gateway |
 
@@ -23,9 +23,9 @@ Welcome to the Nazar Second Brain documentation.
 
 | Document | Description |
 |----------|-------------|
-| [../system/docs/admin-guide.md](../system/docs/admin-guide.md) | System administration |
+| [../docker/SECURITY.md](../docker/SECURITY.md) | Security hardening guide |
+| [../docker/MIGRATION.md](../docker/MIGRATION.md) | Migration from old setup |
 | [troubleshooting.md](troubleshooting.md) | Common issues and fixes |
-| [migration-from-docker.md](migration-from-docker.md) | Migrate from old Docker setup |
 
 ## Reference
 
@@ -39,43 +39,48 @@ Welcome to the Nazar Second Brain documentation.
 
 ```bash
 # Start/stop/restart
-sudo -u nazar systemctl --user {start|stop|restart} openclaw
-sudo -u nazar systemctl --user {start|stop|restart} syncthing
+cd ~/nazar/docker
+docker compose {up -d|down|restart}
 
-# Status
-nazar-status
-
-# Logs
-nazar-logs                    # OpenClaw
-sudo -u nazar journalctl --user -u syncthing -f  # Syncthing
+# Or use CLI
+nazar-cli {start|stop|restart}
 ```
 
 ### Access Points
 
-| Service | URL |
-|---------|-----|
-| OpenClaw Gateway | `https://<tailscale-hostname>/` |
-| Syncthing GUI | `http://<tailscale-ip>:8384` |
-| SSH | `ssh debian@<tailscale-ip>` |
+| Service | URL (with SSH tunnel) |
+|---------|----------------------|
+| OpenClaw Gateway | `http://localhost:18789` |
+| Syncthing GUI | `http://localhost:8384` |
+
+**SSH Tunnel:**
+```bash
+ssh -N -L 18789:localhost:18789 -L 8384:localhost:8384 debian@vps-ip
+```
 
 ### Important Paths
 
 | Path | Purpose |
 |------|---------|
-| `/home/nazar/vault/` | Obsidian vault |
-| `/home/nazar/.openclaw/` | OpenClaw configuration |
-| `/home/nazar/.local/state/syncthing/` | Syncthing data |
+| `~/nazar/vault/` | Obsidian vault |
+| `~/nazar/.openclaw/` | OpenClaw configuration |
+| `~/nazar/syncthing/config/` | Syncthing data |
 
 ### CLI Commands
 
 ```bash
 # OpenClaw
-sudo -u nazar openclaw configure
-sudo -u nazar openclaw devices list
-sudo -u nazar openclaw devices approve <id>
+docker compose exec openclaw openclaw configure
+docker compose exec openclaw openclaw devices list
+docker compose exec openclaw openclaw devices approve <id>
 
 # Syncthing
-sudo -u nazar syncthing cli show system
-sudo -u nazar syncthing cli show connections
-sudo -u nazar syncthing cli show folders
+docker compose exec syncthing syncthing cli show system
+docker compose exec syncthing syncthing cli show connections
+docker compose exec syncthing syncthing cli show folders
+
+# Or use nazar-cli
+nazar-cli configure
+nazar-cli token
+nazar-cli syncthing-id
 ```

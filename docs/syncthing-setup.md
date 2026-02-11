@@ -5,36 +5,40 @@ Syncthing provides real-time synchronization of your Obsidian vault across all d
 ## Architecture
 
 ```
-┌─────────────┐      Tailscale      ┌─────────────┐      Tailscale      ┌─────────────┐
-│   Laptop    │ ◄─────── VPN ───────► │     VPS     │ ◄─────── VPN ───────► │    Phone    │
-│  Syncthing  │                       │  Syncthing  │                       │  Syncthing  │
-│  ~/vault    │ ◄─── sync vault ────► │ ~/vault     │ ◄─── sync vault ────► │  ~/vault    │
-└─────────────┘                       └─────────────┘                       └─────────────┘
+┌─────────────┐                        ┌─────────────┐                        ┌─────────────┐
+│   Laptop    │ ◄─────── Internet ────► │     VPS     │ ◄─────── Internet ────► │    Phone    │
+│  Syncthing  │   or SSH Tunnel/VPN    │  Syncthing  │   or SSH Tunnel/VPN    │  Syncthing  │
+│  ~/vault    │ ◄───── sync vault ────► │ ~/nazar/    │ ◄───── sync vault ────► │  ~/vault    │
+└─────────────┘                        │   vault     │                        └─────────────┘
+                                       └─────────────┘
 ```
 
 ## Initial Setup
 
-### On the VPS (Nazar)
+### On the VPS
 
-After running the bootstrap script:
+After running the Docker setup:
 
 ```bash
-# Start Syncthing
-sudo bash nazar/scripts/setup-syncthing.sh
-
 # Get your device ID
-sudo -u nazar syncthing cli show system | grep myID
+docker compose exec syncthing syncthing cli show system | grep myID
+
+# Or use CLI
+nazar-cli syncthing-id
 ```
 
-Access the GUI:
-```
-http://<vps-tailscale-ip>:8384
+Access the GUI via SSH tunnel:
+```bash
+# On laptop
+ssh -N -L 8384:localhost:8384 debian@vps-ip
+
+# Then open: http://localhost:8384
 ```
 
 **First-time GUI setup:**
 1. Set admin username and password (important!)
 2. Note the Device ID (Settings → General → Device ID)
-3. Keep the GUI accessible only on Tailscale interface
+3. Access via SSH tunnel only (localhost:8384)
 
 ### On Your Laptop
 
@@ -67,18 +71,18 @@ http://<vps-tailscale-ip>:8384
 
 ## Folder Configuration
 
-### On VPS (as nazar user)
+### On VPS
 
 ```bash
-# Create vault folder if not exists
-mkdir -p /home/nazar/vault
-
-# Via GUI or CLI - add folder
-sudo -u nazar syncthing cli config folders add --id nazar-vault --label "Nazar Vault" --path /home/nazar/vault
+# Via GUI or CLI - folder path inside container
+docker compose exec syncthing syncthing cli config folders add \
+    --id nazar-vault \
+    --label "Nazar Vault" \
+    --path /var/syncthing/vault
 
 # Share with your devices
-sudo -u nazar syncthing cli config folders nazar-vault devices add --device-id <LAPTOP-DEVICE-ID>
-sudo -u nazar syncthing cli config folders nazar-vault devices add --device-id <PHONE-DEVICE-ID>
+docker compose exec syncthing syncthing cli config folders nazar-vault devices add --device-id <LAPTOP-DEVICE-ID>
+docker compose exec syncthing syncthing cli config folders nazar-vault devices add --device-id <PHONE-DEVICE-ID>
 ```
 
 ### Recommended Settings
@@ -87,7 +91,7 @@ sudo -u nazar syncthing cli config folders nazar-vault devices add --device-id <
 
 | Setting | Value | Reason |
 |---------|-------|--------|
-| Folder Path | `/home/nazar/vault` | Central location |
+| Folder Path | `/var/syncthing/vault` | Container path |
 | Folder ID | `nazar-vault` | Unique identifier |
 | File Versioning | Simple File Versioning | Protect against accidental deletes |
 | Keep Versions | 3 | Balance safety vs storage |
@@ -104,29 +108,24 @@ sudo -u nazar syncthing cli config folders nazar-vault devices add --device-id <
 
 ## Security
 
-### Bind to Tailscale Only
+### Access Control
 
-Edit `/home/nazar/.local/state/syncthing/config.xml`:
+Always access Syncthing GUI via SSH tunnel:
 
-```xml
-<gui enabled="true" tls="false">
-    <address>100.x.x.x:8384</address>  <!-- Your Tailscale IP -->
-    <user>admin</user>
-    <password>$2a$10$...</password>  <!-- bcrypt hash -->
-</gui>
-```
+```bash
+# Single tunnel for Syncthing only
+ssh -N -L 8384:localhost:8384 debian@vps-ip
 
-Or via environment variable in the systemd service:
-```
-Environment="STGUIADDRESS=100.x.x.x:8384"
+# Combined with OpenClaw
+ssh -N -L 18789:localhost:18789 -L 8384:localhost:8384 debian@vps-ip
 ```
 
 ### Firewall
 
-Syncthing ports are only needed if you want direct connections (not through Tailscale relays):
+Syncthing sync protocol uses outgoing connections by default. If you want to allow direct incoming connections (optional):
 
 ```bash
-# Optional: Allow Syncthing discovery
+# Optional: Allow Syncthing discovery on Tailscale interface
 sudo ufw allow in on tailscale0 to any port 22000 proto tcp comment 'Syncthing'
 sudo ufw allow in on tailscale0 to any port 22000 proto udp comment 'Syncthing'
 sudo ufw allow in on tailscale0 to any port 21027 proto udp comment 'Syncthing discovery'
@@ -136,17 +135,19 @@ sudo ufw allow in on tailscale0 to any port 21027 proto udp comment 'Syncthing d
 
 ### Devices Not Connecting
 
-1. Check Tailscale is running on both sides:
+1. Check that Syncthing is running:
    ```bash
-   tailscale status
+   docker compose ps
    ```
 
 2. Verify Syncthing is listening:
    ```bash
-   sudo -u nazar ss -tlnp | grep syncthing
+   docker compose exec syncthing netstat -tlnp | grep syncthing
    ```
 
 3. Check device IDs are correct
+
+4. Verify network connectivity between devices
 
 ### Sync Conflicts
 
@@ -161,41 +162,38 @@ To resolve:
 
 Ensure proper ownership:
 ```bash
-sudo chown -R nazar:nazar /home/nazar/vault
+chown -R 1000:1000 ~/nazar/vault
 ```
 
 ### Logs
 
 ```bash
 # Syncthing logs
-sudo -u nazar journalctl --user -u syncthing -f
+docker compose logs -f syncthing
 
 # Syncthing CLI
-sudo -u nazar syncthing cli show system
-sudo -u nazar syncthing cli show connections
-sudo -u nazar syncthing cli show folders
+docker compose exec syncthing syncthing cli show system
+docker compose exec syncthing syncthing cli show connections
+docker compose exec syncthing syncthing cli show folders
 ```
 
 ## CLI Reference
 
 ```bash
-# As nazar user
-sudo -u nazar syncthing [command]
-
 # Common commands
-syncthing cli show system           # System info
-syncthing cli show config           # Full config
-syncthing cli show connections      # Connected devices
-syncthing cli show folders          # Folder status
-syncthing cli show pending-devices  # Devices waiting to connect
-syncthing cli show pending-folders  # Folders waiting to sync
+docker compose exec syncthing syncthing cli show system           # System info
+docker compose exec syncthing syncthing cli show config           # Full config
+docker compose exec syncthing syncthing cli show connections      # Connected devices
+docker compose exec syncthing syncthing cli show folders          # Folder status
+docker compose exec syncthing syncthing cli show pending-devices  # Pending devices
+docker compose exec syncthing syncthing cli show pending-folders  # Pending folders
 
 # Add device
-syncthing cli config devices add --device-id <ID> --name "My Laptop"
+docker compose exec syncthing syncthing cli config devices add --device-id <ID> --name "My Laptop"
 
 # Add folder
-syncthing cli config folders add --id vault --path /home/nazar/vault
+docker compose exec syncthing syncthing cli config folders add --id vault --path /var/syncthing/vault
 
 # Restart
-systemctl --user restart syncthing
+docker compose restart syncthing
 ```

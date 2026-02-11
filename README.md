@@ -1,17 +1,21 @@
 # Second Brain — AI-Assisted Personal Knowledge Management
 
-An AI-assisted personal knowledge management system built on Obsidian, powered by an AI agent (Nazar) running on OpenClaw, synchronized across devices via Syncthing, and hosted on a hardened Debian VPS behind Tailscale.
+An AI-assisted personal knowledge management system built on Obsidian, powered by an AI agent (Nazar) running on OpenClaw, synchronized across devices via Syncthing, and hosted on a hardened Debian VPS.
+
+**Architecture**: Docker containers with shared vault volume — simple, secure, reproducible.
 
 ---
 
 ## 🚀 Quick Start
 
 ```bash
-# On your fresh Debian/Ubuntu VPS (as root):
-curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/bootstrap/bootstrap.sh | bash
+# On your fresh Debian/Ubuntu VPS (as debian user):
+curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/docker/setup.sh | bash
 
-# Then follow the on-screen instructions
+# Follow the on-screen instructions
 ```
+
+See [docker/VPS-GUIDE.md](docker/VPS-GUIDE.md) for detailed setup instructions.
 
 ---
 
@@ -21,25 +25,27 @@ Three integrated layers working together:
 
 1. **Content Layer** (`vault/`) — An Obsidian vault organized with the PARA method
 2. **Intelligence Layer** (OpenClaw) — The Nazar AI agent that manages your daily journal and answers questions
-3. **Infrastructure Layer** — Simple, secure services running directly on the VPS (no Docker)
+3. **Infrastructure Layer** — Docker containers running OpenClaw + Syncthing
 
 ```
 second-brain/
 ├── vault/                ← Obsidian vault (PARA structure + agent config)
 │   ├── 00-inbox/         ← Quick capture
-│   ├── 01-daily-journey/ ← Daily notes (YYYY/MM-MMMM/YYYY-MM-DD.md)
+│   ├── 01-daily-journey/ ← Daily notes
 │   ├── 02-projects/      ← Active projects
 │   ├── 03-areas/         ← Life areas
 │   ├── 04-resources/     ← Reference material
 │   ├── 05-archive/       ← Completed items
 │   └── 99-system/        ← Agent workspace, skills, templates
-├── nazar/                ← Service user configuration
-│   ├── config/           ← OpenClaw configuration templates
-│   └── scripts/          ← Setup helpers
-├── system/               ← System administration scripts
-│   ├── scripts/          ← Admin helper scripts
-│   └── docs/             ← Admin documentation
-├── bootstrap/            ← Bootstrap files for initial setup
+├── docker/               ← Docker deployment files
+│   ├── docker-compose.yml
+│   ├── Dockerfile.openclaw
+│   ├── setup.sh
+│   ├── setup-security.sh
+│   ├── nazar-cli.sh
+│   ├── VPS-GUIDE.md
+│   ├── SECURITY.md
+│   └── MIGRATION.md
 └── docs/                 ← User documentation
 ```
 
@@ -51,23 +57,23 @@ second-brain/
 
 | User | Purpose | Permissions |
 |------|---------|-------------|
-| `debian` | System administrator | sudo access, SSH login |
-| `nazar` | Service user | No sudo, runs OpenClaw + Syncthing |
+| `debian` | System administrator | SSH login, runs Docker containers |
+| `1000:1000` | Container user | Inside Docker containers |
 
 ### Services
 
-| Service | Runs As | Purpose |
-|---------|---------|---------|
-| OpenClaw Gateway | `nazar` | AI agent gateway (port 18789, Tailscale serve) |
-| Syncthing | `nazar` | Vault synchronization (port 8384) |
+| Service | Container | Purpose |
+|---------|-----------|---------|
+| OpenClaw Gateway | `nazar-openclaw` | AI agent gateway (port 18789) |
+| Syncthing | `nazar-syncthing` | Vault synchronization (port 8384) |
 
 ### Data Locations
 
-| Path | Purpose | Owner |
-|------|---------|-------|
-| `/home/nazar/vault/` | Obsidian vault | `nazar:nazar` |
-| `/home/nazar/.openclaw/` | OpenClaw config + state | `nazar:nazar` |
-| `/home/nazar/.local/state/syncthing/` | Syncthing data | `nazar:nazar` |
+| Path | Purpose |
+|------|---------|
+| `~/nazar/vault/` | Obsidian vault (synced) |
+| `~/nazar/.openclaw/` | OpenClaw config + workspace |
+| `~/nazar/syncthing/config/` | Syncthing database |
 
 ---
 
@@ -75,105 +81,94 @@ second-brain/
 
 | Feature | Description |
 |---------|-------------|
-| **🔒 Secure by Default** | Tailscale VPN + hardened SSH + no public ports |
-| **🎙️ Voice Processing** | Whisper STT + Piper TTS for voice notes |
+| **🔒 Secure by Default** | SSH tunnel access + optional Tailscale VPN |
 | **📱 Multi-Device Sync** | Syncthing (real-time, conflict-resistant) |
-| **🤖 AI Agent** | Nazar manages your daily journal and answers questions |
+| **🤖 AI Agent** | Nazar manages your daily journal |
 | **📓 PARA Method** | Organized by Projects, Areas, Resources, Archive |
-| **🚀 Simple** | No Docker, direct Node.js/Python execution |
+| **🐳 Docker** | Containerized, reproducible, easy updates |
 
 ---
 
 ## Setup Guide
 
-### 1. Bootstrap the VPS
+### 1. Deploy on VPS
 
-Run the bootstrap script on a fresh Debian 13 or Ubuntu 22.04+ VPS:
+Run the setup script on a fresh Debian 13 or Ubuntu 22.04+ VPS:
 
 ```bash
-# As root
-curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/bootstrap/bootstrap.sh | bash
+# Create debian user first (as root)
+adduser debian
+usermod -aG sudo debian
+
+# Copy SSH keys
+mkdir -p /home/debian/.ssh
+cp /root/.ssh/authorized_keys /home/debian/.ssh/
+chown -R debian:debian /home/debian/.ssh
+
+# Switch to debian and run setup
+su - debian
+curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/docker/setup.sh | bash
 ```
 
 This will:
-- Create `debian` (admin) and `nazar` (service) users
-- Install Node.js 22, OpenClaw, Syncthing, Tailscale
-- Harden SSH and configure firewall
-- Set up systemd user services
+- Install Docker
+- Create `~/nazar/` directory structure
+- Configure OpenClaw and Syncthing
+- Optionally apply security hardening
 
-### 2. Configure Tailscale
-
-```bash
-sudo tailscale up
-# Authenticate in your browser when prompted
-```
-
-### 3. Deploy the Vault
-
-Clone this repository and copy the vault:
+### 2. Access Services
 
 ```bash
-# As debian user
-su - debian
-git clone https://github.com/alexradunet/easy-para-system-claw-vps.git ~/nazar-deploy
-cd ~/nazar-deploy
+# On your laptop, open SSH tunnel
+ssh -N -L 18789:localhost:18789 -L 8384:localhost:8384 debian@your-vps-ip
 
-# Copy vault to nazar user
-sudo cp -r vault/* /home/nazar/vault/
-sudo chown -R nazar:nazar /home/nazar/vault
+# Then open:
+# - OpenClaw Gateway: http://localhost:18789
+# - Syncthing GUI: http://localhost:8384
 ```
 
-### 4. Start Syncthing
+### 3. Configure Syncthing
+
+1. Get VPS Device ID from Syncthing GUI
+2. Add it to your laptop/phone Syncthing
+3. Share your vault folder
+
+### 4. Configure OpenClaw
 
 ```bash
-sudo bash nazar/scripts/setup-syncthing.sh
+# On VPS
+docker compose exec -it openclaw openclaw configure
 ```
-
-Then access the Syncthing GUI at `http://<tailscale-ip>:8384` to:
-1. Set admin username/password
-2. Add your devices (laptop, phone)
-3. Share the vault folder
-
-### 5. Start OpenClaw
-
-```bash
-sudo bash nazar/scripts/setup-openclaw.sh
-
-# Configure models and channels
-sudo -u nazar openclaw configure
-```
-
-Access the gateway at `https://<tailscale-hostname>/`
 
 ---
 
 ## Daily Usage
 
-### From Your Devices
+### Management Commands
 
-1. **Install Syncthing** on laptop and phone
-2. **Add the VPS device** (get ID from VPS: `sudo -u nazar syncthing cli show system`)
-3. **Share your vault folder** with the VPS
-4. **Open in Obsidian** — changes sync instantly
+```bash
+# View status
+nazar-cli status
+
+# View logs
+nazar-cli logs
+
+# Restart services
+nazar-cli restart
+
+# Create backup
+nazar-cli backup
+
+# Show SSH tunnel command
+nazar-cli tunnel
+
+# Run security audit
+nazar-cli security
+```
 
 ### Voice Notes
 
 Send a voice message to your agent via WhatsApp/Telegram → Nazar transcribes it → Saved to today's daily note with timestamp.
-
-### Admin Commands (as debian user)
-
-```bash
-# View logs
-nazar-logs          # OpenClaw logs
-journalctl --user -u syncthing -f  # Syncthing logs (as nazar)
-
-# Restart services
-nazar-restart       # Restart OpenClaw
-sudo -u nazar systemctl --user restart syncthing
-
-# Check status
-nazar-status        # Service status
-```
 
 ---
 
@@ -181,46 +176,39 @@ nazar-status        # Service status
 
 | Document | Description |
 |----------|-------------|
+| `docker/VPS-GUIDE.md` | VPS deployment guide (OVHcloud, Hetzner, etc.) |
+| `docker/SECURITY.md` | Security hardening and best practices |
+| `docker/MIGRATION.md` | Migration from old systemd setup |
 | `docs/vault-structure.md` | PARA vault layout and conventions |
 | `docs/agent.md` | Nazar agent — workspace, personality, memory |
 | `docs/syncthing-setup.md` | Detailed Syncthing configuration |
 | `docs/openclaw-config.md` | OpenClaw configuration reference |
 | `docs/troubleshooting.md` | Common issues and fixes |
-| `system/docs/admin-guide.md` | System administration guide |
 
 ---
 
 ## Security Model
 
-Defense-in-depth with 5 layers:
+Defense-in-depth with 4 layers:
 
-1. **Network:** Tailscale VPN + UFW firewall — zero public ports
+1. **Network:** SSH tunnel (localhost only) or Tailscale VPN — zero public ports
 2. **Authentication:** SSH keys only — no passwords, no root login
-3. **User Isolation:** `nazar` user runs services with no sudo access
-4. **Secrets:** API keys in `~/.openclaw/`, never in vault
-5. **Auto-Patching:** Unattended security upgrades daily
+3. **Container Isolation:** Services run as non-root (UID 1000) inside containers
+4. **Secrets:** API keys in `~/nazar/docker/.env`, never in vault
+
+Run `nazar-cli security` to audit your setup.
 
 ---
 
-## Why This Architecture?
+## Why Docker?
 
-### Compared to Docker Version
-
-| Aspect | Old (Docker + Git) | New (Direct + Syncthing) |
-|--------|-------------------|-------------------------|
-| Complexity | High (containers, compose, git hooks) | Low (direct execution) |
-| Sync | Git (cron-based, conflicts) | Syncthing (real-time, auto-resolve) |
-| Resource Usage | Higher (container overhead) | Lower (native processes) |
-| Maintenance | Docker updates, image rebuilds | Just system packages |
-| Reliability | Git merge conflicts | Syncthing conflict files |
-
-### Why Syncthing Over Git?
-
-- **Real-time sync**: Changes propagate instantly
-- **Conflict handling**: Creates `.sync-conflict-*` files instead of breaking
-- **No cron jobs**: No 5-minute delays or push/pull errors
-- **Mobile-friendly**: Native apps, no Git plugins needed
-- **Resilient**: Works offline, syncs when connected
+| Aspect | Old (Systemd) | New (Docker) |
+|--------|---------------|--------------|
+| Complexity | Multiple users, systemd services | Single user, containers |
+| Isolation | User-based (nazar user) | Container-based |
+| Updates | Manual package updates | `docker compose pull` |
+| Reproducibility | Environment-dependent | Consistent across hosts |
+| Portability | Tied to specific setup | Runs anywhere with Docker |
 
 ---
 
@@ -230,4 +218,4 @@ MIT License — feel free to use, modify, and share.
 
 ---
 
-_Built with Obsidian, OpenClaw, Syncthing, and a lot of voice notes._
+_Built with Obsidian, OpenClaw, Syncthing, and Docker._

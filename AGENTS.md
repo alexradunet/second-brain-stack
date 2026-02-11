@@ -1,20 +1,18 @@
 # Second Brain — AI-Assisted Personal Knowledge Management
 
-An AI-assisted personal knowledge management system built on Obsidian, powered by an AI agent (Nazar) running on OpenClaw, synchronized across devices via Syncthing, and hosted on a hardened Debian VPS behind Tailscale.
+An AI-assisted personal knowledge management system built on Obsidian, powered by an AI agent (Nazar) running on OpenClaw, synchronized across devices via Syncthing, and hosted on a hardened Debian VPS.
 
-**Architecture:** Two deployment options:
-1. **Docker** (Recommended) — Containerized OpenClaw + Syncthing with shared volume
-2. **Direct** — Simple execution under dedicated user (systemd)
+**Architecture:** Docker containers with shared vault volume.
 
 ---
 
 ## Project Overview
 
-This project consists of three integrated layers:
+Three integrated layers:
 
 1. **Content Layer** (`vault/`) — An Obsidian vault organized with the PARA method
-2. **Intelligence Layer** (OpenClaw Gateway) — The Nazar AI agent that processes voice messages and manages daily journals
-3. **Infrastructure Layer** — Services running in Docker containers or directly on VPS
+2. **Intelligence Layer** (OpenClaw Gateway) — The Nazar AI agent
+3. **Infrastructure Layer** — Docker containers (OpenClaw + Syncthing)
 
 ```
 second-brain/
@@ -26,33 +24,23 @@ second-brain/
 │   ├── 04-resources/     ← Reference material
 │   ├── 05-archive/       ← Completed/inactive items
 │   └── 99-system/        ← Agent workspace, skills, templates
-├── docker/               ← Docker deployment files (recommended)
+├── docker/               ← Docker deployment files
 │   ├── docker-compose.yml
 │   ├── Dockerfile.openclaw
 │   ├── setup.sh
-│   └── nazar-cli.sh
-├── nazar/                ← Service user configuration (direct mode)
-│   ├── config/           ← OpenClaw config templates
-│   └── scripts/          ← Setup scripts for services
-├── bootstrap/            ← VPS bootstrap files (direct mode)
-├── system/               ← System administration
-│   ├── scripts/          ← Admin helper scripts
-│   └── docs/             ← Admin documentation
+│   ├── setup-security.sh
+│   ├── nazar-cli.sh
+│   ├── VPS-GUIDE.md
+│   ├── SECURITY.md
+│   └── MIGRATION.md
 └── docs/                 ← User documentation
 ```
 
 ---
 
-## Deployment: Docker (Recommended)
+## Deployment
 
-OpenClaw and Syncthing run in Docker containers with a shared volume for the vault. Docker provides process isolation, eliminating the need for a separate service user.
-
-**Benefits:**
-- Isolated, reproducible environment
-- Easy updates (pull new images)
-- Consistent across different hosts
-- Simplified backup/restore
-- No separate service user needed
+OpenClaw and Syncthing run in Docker containers with a shared volume for the vault.
 
 ```bash
 # Quick start
@@ -64,10 +52,10 @@ curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-v
 ┌─────────────────────────────────────────────────────────────┐
 │              VPS (Single debian user)                       │
 │                                                             │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │   OpenClaw   │  │  Syncthing   │  │   SSH/       │      │
-│  │  Container   │  │  Container   │  │  Tailscale   │      │
-│  └──────┬───────┘  └──────┬───────┘  └──────────────┘      │
+│  ┌──────────────┐  ┌──────────────┐                        │
+│  │   OpenClaw   │  │  Syncthing   │                        │
+│  │  Container   │  │  Container   │                        │
+│  └──────┬───────┘  └──────┬───────┘                        │
 │         └─────────────────┼─────────────────┘               │
 │                  ┌────────┴────────┐                        │
 │                  │  ~/nazar/vault  │                        │
@@ -76,8 +64,8 @@ curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-v
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Deployment Modes:**
-- **SSH Tunnel** (default): Access via `ssh -L 18789:localhost:18789 debian@vps`
+**Access Modes:**
+- **SSH Tunnel** (default): `ssh -L 18789:localhost:18789 debian@vps`
 - **Tailscale**: Mesh VPN for multi-device access
 
 ---
@@ -89,8 +77,6 @@ curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-v
 | `debian` | System administrator | SSH login, runs Docker containers |
 | `1000:1000` | Container user | Inside Docker containers |
 
-Docker provides isolation - no separate service user needed on the host.
-
 ---
 
 ## Technology Stack
@@ -100,7 +86,6 @@ Docker provides isolation - no separate service user needed on the host.
 | **Gateway** | OpenClaw Docker image |
 | **Sync** | Syncthing official Docker image |
 | **Networking** | SSH tunnel (default) or Tailscale container |
-| **Voice Processing** | Optional: Whisper + Piper in container |
 | **OS** | Debian 13 / Ubuntu 22.04+ |
 | **PKM App** | Obsidian |
 | **Container Runtime** | Docker + Docker Compose |
@@ -109,13 +94,11 @@ Docker provides isolation - no separate service user needed on the host.
 
 ## Vault Structure (PARA Method)
 
-The vault uses the PARA organizational method with numbered kebab-case folders:
-
 | Folder | Purpose |
 |--------|---------|
-| `00-inbox/` | Quick capture — new notes land here by default |
+| `00-inbox/` | Quick capture |
 | `01-daily-journey/` | Daily journal notes (`YYYY/MM-MMMM/YYYY-MM-DD.md`) |
-| `02-projects/` | Active projects with clear goals and deadlines |
+| `02-projects/` | Active projects with goals and deadlines |
 | `03-areas/` | Life areas requiring ongoing attention |
 | `04-resources/` | Reference material and knowledge base |
 | `05-archive/` | Completed or inactive items |
@@ -123,9 +106,6 @@ The vault uses the PARA organizational method with numbered kebab-case folders:
 
 ### Daily Note Format
 
-Daily notes follow the structure: `01-daily-journey/2026/02-February/2026-02-11.md`
-
-Voice notes are appended with timestamps:
 ```markdown
 ---
 
@@ -138,16 +118,16 @@ Transcribed voice note content...
 
 ## Agent Workspace
 
-The agent's "brain" lives at `vault/99-system/openclaw/workspace/`:
+The agent's "brain" lives at `~/nazar/.openclaw/workspace/` (mounted at `/home/node/.openclaw/workspace` in container):
 
 | File | Purpose |
 |------|---------|
 | `SOUL.md` | Agent personality and values |
 | `AGENTS.md` | Behavior rules and operational guidelines |
 | `USER.md` | User profile and preferences |
-| `IDENTITY.md` | Agent self-concept (name, creature type, vibe) |
-| `MEMORY.md` | Long-term curated memory (main sessions only) |
-| `TOOLS.md` | Environment notes (camera names, SSH hosts, etc.) |
+| `IDENTITY.md` | Agent self-concept |
+| `MEMORY.md` | Long-term curated memory |
+| `TOOLS.md` | Environment notes |
 | `HEARTBEAT.md` | Periodic task checklist |
 | `memory/` | Daily log files (`YYYY-MM-DD.md`) |
 
@@ -163,10 +143,10 @@ Before each session, the agent reads:
 
 ## Skills
 
-Skills are self-contained modules in `vault/99-system/openclaw/skills/`:
+Skills are self-contained modules in `~/nazar/.openclaw/workspace/skills/`:
 
 ### obsidian/
-Vault operations: read/write notes, manage daily journal, work with templates.
+Vault operations: read/write notes, manage daily journal.
 
 **Key functions:**
 - `get_daily_note_path()` — Path for today's note
@@ -176,16 +156,12 @@ Vault operations: read/write notes, manage daily journal, work with templates.
 - `read_note(path)` — Read a note
 
 ### voice/
-Local speech-to-text (Whisper) and text-to-speech (Piper) with Obsidian integration.
+Local speech-to-text (Whisper) and text-to-speech (Piper).
 
 **Key functions:**
 - `transcribe_audio(audio_path)` — Audio → text
 - `transcribe_and_save(audio_path)` — Full pipeline: transcribe → daily note
 - `generate_speech(text)` — Text → WAV
-- `convert_to_opus(wav_path)` — WAV → OGG/Opus (WhatsApp)
-
-### vps-setup/
-VPS provisioning and security hardening scripts.
 
 ---
 
@@ -198,7 +174,7 @@ VPS provisioning and security hardening scripts.
 curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/docker/setup.sh | bash
 ```
 
-See [docker/HETZNER.md](docker/HETZNER.md) for detailed Hetzner VPS deployment.
+See [docker/VPS-GUIDE.md](docker/VPS-GUIDE.md) for detailed VPS deployment.
 
 ### What the Setup Does
 
@@ -266,11 +242,11 @@ Syncthing                  Syncthing               Syncthing
 1. **VPS**: Syncthing runs in container on port 8384
 2. **Devices**: Add VPS device ID to laptop/phone Syncthing
 3. **Folder**: Share `nazar-vault` folder across devices
-4. **Sync**: Changes propagate instantly (no cron needed)
+4. **Sync**: Changes propagate instantly
 
 ### Conflict Handling
 
-Syncthing creates `.sync-conflict-YYYYMMDD-HHMMSS.md` files instead of blocking sync. This is much more reliable than Git merge conflicts.
+Syncthing creates `.sync-conflict-YYYYMMDD-HHMMSS.md` files instead of blocking sync.
 
 ---
 
@@ -305,21 +281,20 @@ Defense-in-depth with 4 layers:
 
 1. **Network**: SSH tunnel (localhost only) or Tailscale VPN — zero public ports
 2. **Authentication**: SSH keys only — no passwords, no root login
-3. **Container Isolation**: Services run as non-root UID 1000 inside containers
-4. **Secrets**: API keys in `~/nazar/docker/.env`, never in vault
+3. **User Isolation**: Service user has no sudo access (direct) / containers run as non-root (Docker)
+4. **Secrets**: API keys in `.env` file, never in vault
 
 ### Security Audit
 
 ```bash
+# Run security audit
+sudo nazar-security-audit
+
+# Or check manually
 cd ~/nazar/docker
 docker compose exec openclaw openclaw health
 nazar-cli status
-
-# Check firewall
 sudo ufw status
-
-# Check SSH config
-grep "PermitRootLogin\|PasswordAuthentication" /etc/ssh/sshd_config
 ```
 
 ---
@@ -333,7 +308,7 @@ grep "PermitRootLogin\|PasswordAuthentication" /etc/ssh/sshd_config
 - **No spaces in folder names** — prevents quoting issues
 
 ### Python Skills
-- Use environment variables for paths: `os.environ.get("VAULT_PATH", "/opt/nazar/vault")`
+- Use environment variables for paths: `os.environ.get("VAULT_PATH", "~/nazar/vault")`
 - Never hardcode user paths
 - Keep skills self-contained
 
@@ -353,7 +328,6 @@ docker compose logs --tail=50
 # Service-specific
 docker compose logs openclaw
 docker compose logs syncthing
-docker compose logs tailscale
 ```
 
 ### Common Issues
@@ -375,16 +349,6 @@ docker compose exec openclaw cat /home/node/.openclaw/openclaw.json
 chown -R 1000:1000 ~/nazar/vault
 ```
 
-**Can't access via SSH tunnel:**
-```bash
-# On laptop
-ssh -N -L 18789:localhost:18789 debian@YOUR_VPS_IP
-
-# Check if services are listening
-docker compose exec openclaw netstat -tlnp
-docker compose exec syncthing netstat -tlnp
-```
-
 ---
 
 ## Documentation Index
@@ -392,17 +356,16 @@ docker compose exec syncthing netstat -tlnp
 | Document | Description |
 |----------|-------------|
 | `docker/README.md` | Docker deployment guide |
-| `docker/HETZNER.md` | Hetzner VPS deployment guide |
+| `docker/VPS-GUIDE.md` | VPS deployment guide (OVHcloud, Hetzner, etc.) |
 | `docker/SECURITY.md` | Security hardening and best practices |
+| `docker/MIGRATION.md` | Migration from old systemd setup |
 | `docs/README.md` | Project overview and quick start |
-| `docs/architecture.md` | System design and data flow |
 | `docs/vault-structure.md` | PARA method and folder conventions |
 | `docs/agent.md` | Nazar agent system and workspace |
 | `docs/skills.md` | Available skills reference |
 | `docs/syncthing-setup.md` | Syncthing configuration |
 | `docs/openclaw-config.md` | OpenClaw configuration |
 | `docs/troubleshooting.md` | Common issues and fixes |
-| `system/docs/admin-guide.md` | System administration guide |
 
 ---
 
@@ -428,6 +391,7 @@ docker compose exec openclaw openclaw devices approve <request-id>
 | `nazar-cli token` | Show gateway token |
 | `nazar-cli tunnel` | Show SSH tunnel command |
 | `nazar-cli syncthing-id` | Show Syncthing Device ID |
+| `nazar-cli security` | Run security audit |
 
 ---
 

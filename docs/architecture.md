@@ -8,7 +8,7 @@ The Second Brain is three layers: content, intelligence, and infrastructure.
 ┌─────────────────────────────────────────────────────────────────────┐
 │                          CONTENT LAYER                              │
 │                                                                      │
-│  vault/                                                              │
+│  ~/nazar/vault/                                                      │
 │  ├── 00-inbox/  01-daily-journey/  02-projects/  03-areas/  ...    │
 │  └── 99-system/                                                      │
 │      ├── openclaw/workspace/    ← Agent personality + memory         │
@@ -18,170 +18,179 @@ The Second Brain is three layers: content, intelligence, and infrastructure.
 ├──────────────────────────────────────────────────────────────────────┤
 │                       INTELLIGENCE LAYER                             │
 │                                                                      │
-│  OpenClaw Gateway (systemd user service)                             │
+│  OpenClaw Gateway (Docker container)                                 │
 │  ├── Nazar agent                                                     │
 │  │   ├── SOUL.md    → personality                                    │
 │  │   ├── AGENTS.md  → behavior rules                                 │
 │  │   └── USER.md    → knowledge about you                            │
-│  ├── Whisper STT    → voice message transcription                    │
-│  ├── Piper TTS      → voice reply generation                         │
 │  └── LLM backends   → configured via `openclaw configure`            │
 │                                                                      │
 ├──────────────────────────────────────────────────────────────────────┤
 │                      INFRASTRUCTURE LAYER                            │
 │                                                                      │
-│  VPS (Debian 13)                                                     │
-│  ├── Tailscale      → encrypted overlay network                      │
+│  VPS (Debian/Ubuntu)                                                 │
+│  ├── Docker         → container runtime                              │
 │  ├── Syncthing      → real-time vault synchronization                │
-│  ├── Users          → debian (admin) + nazar (service)               │
 │  ├── UFW + Fail2Ban → firewall + brute-force protection              │
-│  └── systemd        → service management + sandboxing                │
+│  └── SSH/Tailscale  → secure access (no public ports)                │
 │                                                                      │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Components
 
-### 1. Obsidian Vault (`vault/`)
+### 1. Obsidian Vault (`~/nazar/vault/`)
 
-The vault is the single source of truth. Everything — your notes, the agent's brain, templates, skills — lives here. It syncs across all devices via Syncthing over Tailscale.
+The vault is the single source of truth. Everything — your notes, the agent's brain, templates, skills — lives here. It syncs across all devices via Syncthing.
 
-The agent's workspace is embedded at `vault/99-system/openclaw/workspace/`. This means when you sync the vault, you sync the agent's personality and memory too.
+The agent's workspace is at `~/nazar/.openclaw/workspace/` (mounted to `/home/node/.openclaw/workspace` in the container). This is separate from the vault for configuration management while still being backed up.
 
-### 2. OpenClaw Gateway (systemd service)
+### 2. OpenClaw Gateway (Docker Container)
 
-The OpenClaw gateway runs as a systemd user service under the `nazar` user:
+The AI gateway runs in a Docker container (`nazar-openclaw`):
+- **Base image**: Node.js 22 (bookworm-slim)
+- **User**: `node` (UID 1000)
+- **Ports**: 18789 (gateway)
+- **Volumes**: 
+  - `~/nazar/.openclaw/` → `/home/node/.openclaw/`
+  - `~/nazar/vault/` → `/vault/`
 
-- Receives messages from WhatsApp, Telegram, or web chat
-- Routes them to the Nazar agent
-- Provides the agent with access to the vault at `/home/nazar/vault`
-- Runs voice processing (Whisper STT, Piper TTS) locally
+### 3. Syncthing (Docker Container)
 
-The gateway binds to loopback and uses integrated Tailscale Serve to expose at `https://<tailscale-hostname>/`.
+File synchronization runs in a Docker container (`nazar-syncthing`):
+- **Base image**: `syncthing/syncthing:latest`
+- **User**: 1000:1000
+- **Ports**: 8384 (web UI), 22000 (sync), 21027 (discovery)
+- **Volumes**:
+  - `~/nazar/vault/` → `/var/syncthing/vault/`
+  - `~/nazar/syncthing/config/` → `/var/syncthing/config/`
 
-### 3. Syncthing Vault Sync
+### 4. Security Layer
 
-Syncthing provides real-time bidirectional sync:
-
-```
-Laptop ◄────► VPS ◄────► Phone
-Syncthing    Syncthing   Syncthing
-~/vault      ~/vault     ~/vault
-     \________/
-    Tailscale VPN
-```
-
-- **Conflict handling**: Creates `.sync-conflict-*` files instead of blocking
-- **Versioning**: Simple file versioning protects against accidental deletes
-- **Encryption**: All traffic over Tailscale's WireGuard encryption
-- **No polling**: Instant sync when files change
-
-### 4. User Model
-
-| User | Purpose | Permissions |
-|------|---------|-------------|
-| `debian` | System administrator | sudo access, SSH login |
-| `nazar` | Service account | Runs OpenClaw + Syncthing, owns vault |
-
-**Key security features:**
-- `nazar` has **no sudo access** — cannot escalate privileges
-- `nazar` password is **locked** — cannot login interactively
-- `nazar` home directory is `drwx------` — only owner can read
-- Services run with systemd sandboxing (NoNewPrivileges, PrivateTmp, etc.)
-
-### 5. Tailscale
-
-All services are only reachable via Tailscale's encrypted mesh VPN (`100.x.x.x` addresses). No public ports are needed.
+- **SSH**: Key-based authentication, root login disabled
+- **UFW**: Firewall blocks all incoming except SSH
+- **Fail2ban**: Blocks IPs after 3 failed login attempts
+- **Docker**: Container isolation, non-root execution
 
 ## Data Flow
 
-### Voice Message → Daily Journal
+### Vault Synchronization
 
 ```
-Phone (WhatsApp)
-    │ voice message
-    ▼
-OpenClaw Gateway (https://<tailscale-hostname>/)
-    │
-    ▼
-Whisper STT (local, in venv)
-    │ transcribed text
-    ▼
-Obsidian skill (obsidian.py)
-    │ append with timestamp
-    ▼
-/home/nazar/vault/01-daily-journey/2026/02-February/2026-02-11.md
-    │
-    ▼
-Syncthing syncs to all devices instantly
+Laptop (Obsidian)
+       │
+       │ Edit note
+       ▼
+Syncthing (laptop) ──► Syncthing (VPS) ──► Syncthing (phone)
+       │                      │
+       │                      ▼
+       │               ~/nazar/vault/
+       │                      │
+       │                      ▼
+       │               OpenClaw (read/write)
+       │
+       ▼
+Real-time sync to all devices
 ```
 
-### Agent Workspace Loading
+### AI Interaction
 
 ```
-Session starts
-    │
-    ▼
-Read SOUL.md → "who am I"
-Read USER.md → "who am I helping"
-Read AGENTS.md → "how should I behave"
-Read memory/today.md → "what happened recently"
-    │
-    ▼
-Agent is ready to respond
+User (via WhatsApp/Telegram/Web)
+       │
+       │ Message
+       ▼
+OpenClaw Gateway
+       │
+       ├─► LLM API (Claude/GPT-4)
+       │
+       ├─► Write to ~/nazar/vault/01-daily-journey/
+       │
+       └─► Syncthing syncs to all devices
 ```
 
-### Configuration Flow
+## Access Patterns
+
+### SSH Tunnel (Default)
 
 ```
-nazar/config/openclaw.json
-    │ copied to VPS at setup
-    ▼
-/home/nazar/.openclaw/openclaw.json
-    │
-    ▼
-OpenClaw reads config, starts gateway
-    │ workspace path
-    ▼
-/home/nazar/vault/99-system/openclaw/workspace/
+Laptop ──SSH──► VPS
+         Tunnel: localhost:18789 → VPS:18789
+         Tunnel: localhost:8384 → VPS:8384
 ```
 
-## Network Topology
+Most secure - no ports exposed to internet.
+
+### Tailscale (Optional)
 
 ```
-Internet                    VPS Firewall (UFW)           Services
-─────────────────────────────────────────────────────────────────────
-                            DENY all incoming
-                            ─────────────────
-Public IP ──► *         ──► DENY (no public ports needed)
-
-Tailscale ──► 22/tcp   ──► ALLOW ──► sshd (tailscale0 only)
-(100.x.x.x)                          ├── interactive SSH
-                                      └── admin access
-
-Tailscale ──► 8384/tcp ──► ALLOW ──► Syncthing GUI (tailscale0 only)
-              HTTPS/443 ──► Tailscale Serve ──► loopback:18789
-                                        └── OpenClaw gateway
+Laptop ──Tailscale──► VPS ──Tailscale──► Phone
+       Mesh VPN with encrypted connections
 ```
 
-**Note:** No public ports exposed. All access flows through Tailscale.
+For multi-device access without SSH tunnels.
 
 ## File Locations
 
-| Path | Owner | Purpose |
-|------|-------|---------|
-| `/home/nazar/vault/` | `nazar:nazar` | Obsidian vault (mode 700) |
-| `/home/nazar/.openclaw/` | `nazar:nazar` | OpenClaw config + state (mode 700) |
-| `/home/nazar/.local/state/syncthing/` | `nazar:nazar` | Syncthing data |
-| `/home/debian/` | `debian:debian` | Admin user home |
+| Path (Host) | Path (Container) | Purpose |
+|-------------|------------------|---------|
+| `~/nazar/vault/` | `/vault/` (OpenClaw)<br>`/var/syncthing/vault/` (Syncthing) | Obsidian vault |
+| `~/nazar/.openclaw/` | `/home/node/.openclaw/` | OpenClaw config |
+| `~/nazar/.openclaw/workspace/` | `/home/node/.openclaw/workspace/` | Agent workspace |
+| `~/nazar/syncthing/config/` | `/var/syncthing/config/` | Syncthing database |
 
-## Extension Points
+## Container Communication
 
-| Want to... | Do this |
-|------------|---------|
-| Add a new skill | Create folder in `vault/99-system/openclaw/skills/` |
-| Change agent personality | Edit `vault/99-system/openclaw/workspace/SOUL.md` |
-| Add an LLM provider | Run `sudo -u nazar openclaw configure` |
-| Add a new channel | Run `sudo -u nazar openclaw configure` |
-| Change vault structure | Rename folders, update `AGENTS.md` + `obsidian/SKILL.md` |
-| Enhance security | Run `sudo bash system/scripts/setup-all-security.sh` |
+```
+┌─────────────────────────────────────────────┐
+│              Docker Network                 │
+│         (nazar-internal bridge)             │
+│                                             │
+│  ┌──────────────┐    ┌──────────────┐      │
+│  │   OpenClaw   │◄──►│  Syncthing   │      │
+│  │   :18789     │    │   :8384      │      │
+│  └──────────────┘    └──────────────┘      │
+│         │                                   │
+│         └──────────────────┐                │
+│                            ▼                │
+│                    ~/nazar/vault/           │
+│                    (bind mount)             │
+└─────────────────────────────────────────────┘
+```
+
+Containers communicate through the shared vault bind mount. OpenClaw reads/writes notes, Syncthing syncs them.
+
+## Update Flow
+
+1. **Docker Images**: `docker compose pull && docker compose up -d`
+2. **Configuration**: Edit `~/nazar/.openclaw/openclaw.json`
+3. **Vault**: Changes sync automatically via Syncthing
+4. **Security**: Automatic via unattended-upgrades
+
+## Security Boundaries
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Host (Debian/Ubuntu)                               │
+│  ├── debian user (runs Docker)                      │
+│  ├── UFW firewall                                   │
+│  └── Fail2ban                                       │
+│                                                     │
+│  ┌─────────────────────────────────────────────┐   │
+│  │  Docker Engine                               │   │
+│  │                                              │   │
+│  │  ┌──────────────┐  ┌──────────────┐         │   │
+│  │  │  Container   │  │  Container   │         │   │
+│  │  │  UID 1000    │  │  UID 1000    │         │   │
+│  │  │  read-only   │  │  read-only   │         │   │
+│  │  │  root fs     │  │  root fs     │         │   │
+│  │  └──────────────┘  └──────────────┘         │   │
+│  └─────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────┘
+```
+
+- Host firewall (UFW) protects the VPS
+- Docker provides process isolation
+- Containers run as non-root
+- Read-only root filesystems
+- No new privileges allowed
