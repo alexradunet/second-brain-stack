@@ -87,17 +87,23 @@ apt-get update -qq
 
 # Install prerequisites
 log_info "Installing prerequisites..."
-apt-get install -y -qq \
-    curl \
-    git \
-    ufw \
-    fail2ban \
-    jq \
-    openssl \
-    apt-transport-https \
-    ca-certificates \
-    gnupg \
-    lsb-release
+
+# Check which packages are already installed
+PACKAGES="curl git ufw fail2ban jq openssl apt-transport-https ca-certificates gnupg lsb-release"
+MISSING_PACKAGES=""
+
+for pkg in $PACKAGES; do
+    if ! dpkg -l | grep -q "^ii  $pkg "; then
+        MISSING_PACKAGES="$MISSING_PACKAGES $pkg"
+    fi
+done
+
+if [ -n "$MISSING_PACKAGES" ]; then
+    log_info "Installing missing packages:$MISSING_PACKAGES"
+    apt-get install -y -qq $MISSING_PACKAGES
+else
+    log_info "All prerequisite packages already installed"
+fi
 
 log_success "Prerequisites installed"
 
@@ -120,21 +126,26 @@ if [ "$TOTAL_MEM" -lt 2048 ] && [ ! -f /swapfile ]; then
 fi
 
 # Install Node.js 22 LTS (required by OpenClaw)
+NEED_NODE_INSTALL=false
 if ! command -v node &> /dev/null; then
-    log_info "Installing Node.js 22 LTS..."
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - > /dev/null 2>&1
-    apt-get install -y -qq nodejs
-    log_success "Node.js installed: $(node --version)"
+    NEED_NODE_INSTALL=true
+    log_info "Node.js not found. Installing Node.js 22 LTS..."
 else
     NODE_VERSION=$(node --version | cut -d'v' -f2 | cut -d'.' -f1)
     if [ "$NODE_VERSION" -lt 22 ]; then
-        log_warn "Node.js version is < 22. Upgrading..."
-        curl -fsSL https://deb.nodesource.com/setup_22.x | bash - > /dev/null 2>&1
-        apt-get install -y -qq nodejs
-        log_success "Node.js upgraded: $(node --version)"
+        NEED_NODE_INSTALL=true
+        log_warn "Node.js version is $NODE_VERSION (< 22). Upgrading..."
     else
-        log_success "Node.js already installed: $(node --version)"
+        log_success "Node.js 22+ already installed: $(node --version)"
     fi
+fi
+
+if [ "$NEED_NODE_INSTALL" = true ]; then
+    # Remove old NodeSource repo if exists (to allow clean upgrade)
+    rm -f /etc/apt/sources.list.d/nodesource.list
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - > /dev/null 2>&1
+    apt-get install -y -qq nodejs
+    log_success "Node.js installed: $(node --version)"
 fi
 
 # Check for Claude Code or Kimi Code
@@ -172,10 +183,21 @@ else
     fi
 fi
 
-# Install selected AI assistant
-if [ "$INSTALL_AI" = "claude" ]; then
-    log_info "Installing Claude Code..."
-    npm install -g @anthropic-ai/claude-code > /dev/null 2>&1
+# Install selected AI assistant (or update if already installed)
+install_ai_assistant() {
+    local AI_NAME=$1
+    local AI_PACKAGE=$2
+    
+    if command -v $AI_NAME &> /dev/null; then
+        log_info "$AI_NAME already installed. Updating..."
+        npm update -g $AI_PACKAGE > /dev/null 2>&1 || npm install -g $AI_PACKAGE > /dev/null 2>&1
+        log_success "$AI_NAME updated: $($AI_NAME --version 2>/dev/null || echo 'unknown version')"
+    else
+        log_info "Installing $AI_NAME..."
+        npm install -g $AI_PACKAGE > /dev/null 2>&1
+        log_success "$AI_NAME installed"
+    fi
+    
     # Ensure global npm bin is in PATH for the deploy user
     NPM_GLOBAL_BIN=$(npm bin -g)
     if ! grep -q "$NPM_GLOBAL_BIN" /home/$DEPLOY_USER/.bashrc 2>/dev/null; then
@@ -183,37 +205,28 @@ if [ "$INSTALL_AI" = "claude" ]; then
     fi
     # Also add for root (current session)
     export PATH="$NPM_GLOBAL_BIN:$PATH"
-    # Verify installation
-    if command -v claude &> /dev/null; then
-        log_success "Claude Code installed: $(claude --version 2>/dev/null || echo 'unknown version')"
-    else
-        log_warn "Claude Code installed but not in PATH. Run: export PATH=\"$NPM_GLOBAL_BIN:\$PATH\""
-    fi
+}
+
+if [ "$INSTALL_AI" = "claude" ]; then
+    install_ai_assistant "claude" "@anthropic-ai/claude-code"
 fi
 
 if [ "$INSTALL_AI" = "kimi" ]; then
-    log_info "Installing Kimi Code..."
-    npm install -g @moonshot-ai/kimi-code > /dev/null 2>&1
-    # Ensure global npm bin is in PATH for the deploy user
-    NPM_GLOBAL_BIN=$(npm bin -g)
-    if ! grep -q "$NPM_GLOBAL_BIN" /home/$DEPLOY_USER/.bashrc 2>/dev/null; then
-        echo "export PATH=\"$NPM_GLOBAL_BIN:\$PATH\"" >> /home/$DEPLOY_USER/.bashrc
-    fi
-    # Also add for root (current session)
-    export PATH="$NPM_GLOBAL_BIN:$PATH"
-    # Verify installation
-    if command -v kimi &> /dev/null; then
-        log_success "Kimi Code installed"
-    else
-        log_warn "Kimi Code installed but not in PATH. Run: export PATH=\"$NPM_GLOBAL_BIN:\$PATH\""
-    fi
+    install_ai_assistant "kimi" "@moonshot-ai/kimi-code"
 fi
 
 # Create nazar_deploy directory
 DEPLOY_DIR="/home/$DEPLOY_USER/nazar_deploy"
-log_info "Creating deploy directory: $DEPLOY_DIR"
 
-mkdir -p "$DEPLOY_DIR"
+if [ -d "$DEPLOY_DIR/.git" ]; then
+    log_info "Repository already exists at $DEPLOY_DIR"
+    log_info "Pulling latest changes..."
+    cd "$DEPLOY_DIR"
+    git pull origin $(git symbolic-ref --short HEAD) 2>/dev/null || log_warn "Could not pull updates (may need manual resolution)"
+else
+    log_info "Creating deploy directory: $DEPLOY_DIR"
+    mkdir -p "$DEPLOY_DIR"
+fi
 
 # Warn about API keys needed
 log_info "Note: You'll need API keys for LLM providers (Anthropic, OpenAI, etc.)"
@@ -241,31 +254,57 @@ case $repo_choice in
         ;;
 esac
 
-# Clone repository
+# Clone or update repository
 if [ -n "$REPO_URL" ]; then
-    log_info "Cloning repository from $REPO_URL..."
-    if git clone "$REPO_URL" "$DEPLOY_DIR" 2>/dev/null; then
-        log_success "Repository cloned"
+    if [ -d "$DEPLOY_DIR/.git" ]; then
+        log_info "Repository exists. Checking for updates..."
+        cd "$DEPLOY_DIR"
+        git fetch origin
+        LOCAL=$(git rev-parse HEAD)
+        REMOTE=$(git rev-parse origin/$(git symbolic-ref --short HEAD))
+        if [ "$LOCAL" != "$REMOTE" ]; then
+            log_info "Updates available. Pulling..."
+            git pull origin $(git symbolic-ref --short HEAD)
+            log_success "Repository updated"
+        else
+            log_info "Repository is up to date"
+        fi
     else
-        log_error "Failed to clone repository"
-        log_info "You can clone manually later with:"
-        log_info "  git clone $REPO_URL $DEPLOY_DIR"
+        log_info "Cloning repository from $REPO_URL..."
+        if git clone "$REPO_URL" "$DEPLOY_DIR" 2>/dev/null; then
+            log_success "Repository cloned"
+        else
+            log_error "Failed to clone repository"
+            log_info "You can clone manually later with:"
+            log_info "  git clone $REPO_URL $DEPLOY_DIR"
+        fi
     fi
 fi
 
 # Set ownership
 chown -R "$DEPLOY_USER:$DEPLOY_USER" "$DEPLOY_DIR"
 
-# Create setup-complete marker
-touch "$DEPLOY_DIR/.bootstrap-complete"
+# Create/update setup-complete marker with timestamp
+echo "Bootstrap completed: $(date -Iseconds)" > "$DEPLOY_DIR/.bootstrap-complete"
+
+# Determine if this is a first run or update
+if [ -f "$DEPLOY_DIR/.bootstrap-complete" ] && git -C "$DEPLOY_DIR" rev-parse --git-dir > /dev/null 2>&1; then
+    RUN_TYPE="update"
+else
+    RUN_TYPE="fresh"
+fi
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║                   Bootstrap Complete!                        ║"
+if [ "$RUN_TYPE" = "update" ]; then
+    echo "║              Bootstrap Update Complete!                      ║"
+else
+    echo "║                   Bootstrap Complete!                        ║"
+fi
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
-log_success "Prerequisites installed"
-log_success "Deploy directory created: $DEPLOY_DIR"
+log_success "Prerequisites installed/updated"
+log_success "Deploy directory ready: $DEPLOY_DIR"
 
 if command -v claude &> /dev/null || [ "$INSTALL_AI" = "claude" ]; then
     echo ""
