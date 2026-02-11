@@ -208,7 +208,18 @@ if [ "$INSTALL_AI" = "kimi" ]; then
         log_info "Kimi Code already installed"
     else
         log_info "Installing Kimi Code..."
+        # Install uv first (required by Kimi Code)
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        # Add uv to PATH for current session
+        export PATH="$HOME/.local/bin:$PATH"
+        # Source the env file if it exists
+        [ -f "$HOME/.local/bin/env" ] && source "$HOME/.local/bin/env"
+        # Now install Kimi Code
         curl -fsSL https://code.kimi.com/install.sh | bash
+        # Add Kimi to PATH for deploy user
+        if ! grep -q '$HOME/.local/bin' /home/$DEPLOY_USER/.bashrc 2>/dev/null; then
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> /home/$DEPLOY_USER/.bashrc
+        fi
         log_success "Kimi Code installed"
     fi
 fi
