@@ -4,6 +4,60 @@ Common issues and how to fix them.
 
 ## Access Issues
 
+### Can't reach gateway via Tailscale
+
+**Symptom:** `https://<tailscale-hostname>/` not loading.
+
+**Cause:** The gateway uses integrated Tailscale Serve mode (`tailscale: { mode: "serve" }` in docker-compose) and manages its own proxy automatically. No manual `tailscale serve` is needed for the gateway.
+
+**Check:**
+```bash
+# Is the gateway container running?
+docker compose ps nazar-gateway
+
+# Check gateway logs for Tailscale Serve errors
+docker compose logs nazar-gateway | grep -i tailscale
+
+# Verify the container is using host networking
+docker inspect nazar-gateway --format='{{.HostConfig.NetworkMode}}'
+# Expected: host
+```
+
+**Fix:** If the gateway container is running but not reachable, restart it to re-establish the Tailscale Serve proxy:
+```bash
+docker compose restart nazar-gateway
+```
+
+---
+
+### Can't reach Syncthing UI via Tailscale IP
+
+**Symptom:** `http://<tailscale-ip>:8384` times out or refuses connection, but `curl http://127.0.0.1:8384` works locally on the VPS.
+
+**Cause:** Syncthing UI is bound to `127.0.0.1` in `docker-compose.yml` (by design — no public exposure). Tailscale traffic arrives on the `tailscale0` interface, not the loopback, so `127.0.0.1`-bound ports reject it.
+
+**Fix:** Use `tailscale serve` to proxy Tailscale traffic to localhost:
+
+```bash
+sudo tailscale serve --bg --tcp 8384 tcp://127.0.0.1:8384
+```
+
+After this, Syncthing UI is reachable at `http://<tailscale-ip>:8384` from your tailnet.
+
+To check active proxies:
+```bash
+tailscale serve status
+```
+
+To remove the proxy:
+```bash
+sudo tailscale serve --tcp=8384 off
+```
+
+**Note:** `tailscale serve` proxies persist across reboots as long as Tailscale is running. No UFW rules are needed — traffic stays within the Tailscale tunnel.
+
+---
+
 ### Locked out of SSH (Tailscale down)
 
 **Symptom:** Can't SSH via Tailscale IP, Tailscale appears down on VPS.
@@ -17,9 +71,9 @@ Common issues and how to fix them.
 6. Verify Tailscale SSH: `ssh nazar@<tailscale-ip>` (from another terminal)
 7. Re-lock: `sudo bash lock-ssh-to-tailscale.sh`
 
-### Can't reach gateway or Syncthing UI
+### Can't reach gateway or Syncthing UI (containers running)
 
-**Symptom:** `http://<tailscale-ip>:18789` or `:8384` not loading.
+**Symptom:** `https://<tailscale-hostname>/` or `http://<tailscale-ip>:8384` not loading, but containers are running.
 
 **Check:**
 ```bash
@@ -29,12 +83,52 @@ tailscale status
 # Are containers running?
 docker compose ps
 
-# Are ports bound correctly?
-ss -tlnp | grep -E "18789|8384"
-# Should show 127.0.0.1, not 0.0.0.0
+# Is Syncthing UI port bound correctly?
+ss -tlnp | grep 8384
+# Should show 127.0.0.1 — this is correct and expected
+
+# Is the gateway container using host networking?
+docker inspect nazar-gateway --format='{{.HostConfig.NetworkMode}}'
+# Expected: host
+
+# Is the manual tailscale serve proxy active for Syncthing UI?
+tailscale serve status
 ```
 
-**Fix:** If ports show `0.0.0.0`, check `docker-compose.yml` port bindings. If containers aren't running, check logs.
+**Fix:**
+- **Gateway:** The gateway manages its own Tailscale Serve proxy. Restart the container: `docker compose restart nazar-gateway`
+- **Syncthing UI:** If `tailscale serve status` shows no proxy for port 8384, set it up: `sudo tailscale serve --bg --tcp 8384 tcp://127.0.0.1:8384`
+
+
+### Control UI shows "pairing required"
+
+**Symptom:** Opening `https://<tailscale-hostname>/` in a browser shows a pairing/approval prompt instead of the Control UI.
+
+**Cause:** This is expected on first connection from a new browser/device. The gateway requires device approval before granting access.
+
+**Fix:**
+
+```bash
+# SSH into the VPS, then:
+openclaw devices list                     # List pending pairing requests
+openclaw devices approve <request-id>     # Approve the pending request
+```
+
+After approval, refresh the browser. The device is remembered for subsequent visits.
+
+---
+
+### VSCode Remote SSH fails with "TCP port forwarding disabled"
+
+**Symptom:** VSCode Remote SSH connection fails with `administratively prohibited` or `AllowTcpForwarding` error.
+
+**Cause:** SSH hardening disabled TCP forwarding, which VSCode needs for its SOCKS proxy.
+
+**Fix:**
+```bash
+sudo sed -i 's/AllowTcpForwarding no/AllowTcpForwarding yes/' /etc/ssh/sshd_config.d/hardened.conf
+sudo sshd -t && sudo systemctl restart sshd
+```
 
 ## Container Issues
 
@@ -161,6 +255,27 @@ grep workspace docker-compose.yml
 ```
 
 The workspace path depends on `OPENCLAW_WORKSPACE_PATH` in `.env` (defaults to `99-system/openclaw/workspace`).
+
+### Gateway crashes with "Config invalid"
+
+**Symptom:** `nazar-gateway` keeps restarting. Logs show `Config invalid` and `Unrecognized key`.
+
+**Check:**
+```bash
+docker logs nazar-gateway 2>&1 | grep -A2 "Config invalid"
+```
+
+**Fix:** OpenClaw evolves and may drop config keys between versions. Run the built-in doctor:
+```bash
+docker compose exec nazar-gateway openclaw doctor --fix
+docker compose restart nazar-gateway
+```
+
+Or manually edit `/srv/nazar/data/openclaw/openclaw.json` to remove the offending keys listed in the error.
+
+**Known invalid keys:** `tools.elevated.ask` (removed in recent OpenClaw versions).
+
+---
 
 ### API key not working
 

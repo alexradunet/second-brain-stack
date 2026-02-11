@@ -9,7 +9,7 @@ Two containers, one shared vault:
 - **nazar-gateway** — OpenClaw with voice tools (Whisper STT + Piper TTS)
 - **nazar-syncthing** — Syncthing for vault sync across devices
 
-Both bind-mount the same vault directory. Gateway API and Syncthing UI are bound to 127.0.0.1 (access via Tailscale).
+Both bind-mount the same vault directory. The gateway uses `network_mode: host` with integrated Tailscale Serve (automatic HTTPS proxy). Syncthing UI is bound to 127.0.0.1 (access via manual `tailscale serve`).
 
 ## Quick Start
 
@@ -40,8 +40,8 @@ cd /srv/nazar && docker compose restart
 
 | Port | Service | Access |
 |------|---------|--------|
-| 18789 | OpenClaw Gateway | 127.0.0.1 (Tailscale) |
-| 8384 | Syncthing UI | 127.0.0.1 (Tailscale) |
+| 443 (HTTPS) | OpenClaw Gateway | `https://<tailscale-hostname>/` (automatic via integrated Tailscale Serve) |
+| 8384 | Syncthing UI | `http://<tailscale-ip>:8384` (manual `tailscale serve`) |
 | 22000 | Syncthing sync | Public |
 | 21027 | Syncthing discovery | Public |
 

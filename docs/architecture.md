@@ -57,7 +57,7 @@ The OpenClaw gateway runs in a Docker container (`nazar-gateway`). It:
 - Provides the agent with access to the vault at `/vault`
 - Runs voice processing (Whisper STT, Piper TTS) locally
 
-The gateway API listens on `127.0.0.1:18789` — only accessible via Tailscale.
+The gateway container uses `network_mode: host` and binds to loopback. It includes an integrated Tailscale Serve proxy (`tailscale: { mode: "serve" }`) that automatically exposes the gateway at `https://<tailscale-hostname>/` — no manual `tailscale serve` needed.
 
 ### 3. Syncthing (Docker)
 
@@ -81,7 +81,7 @@ All internal services (SSH, gateway, Syncthing UI) are bound to `127.0.0.1` and 
 Phone (WhatsApp)
     │ voice message
     ▼
-OpenClaw Gateway (:18789)
+OpenClaw Gateway (https://<tailscale-hostname>/)
     │
     ▼
 Whisper STT (local, in container)
@@ -132,7 +132,7 @@ OpenClaw reads config, starts gateway
 ## Network Topology
 
 ```
-Internet                    VPS Firewall (UFW)           Docker Network
+Internet                    VPS Firewall (UFW)           Containers
 ─────────────────────────────────────────────────────────────────────
                             DENY all incoming
                             ─────────────────
@@ -142,9 +142,11 @@ Public IP ──► 22000/tcp ──► ALLOW ──► nazar-syncthing (sync)
               *         ──► DENY
 
 Tailscale ──► 22/tcp   ──► ALLOW ──► sshd (tailscale0 only)
-(100.x.x.x)  18789    ──► 127.0.0.1 ──► nazar-gateway
-              8384     ──► 127.0.0.1 ──► nazar-syncthing (UI)
+(100.x.x.x)  HTTPS/443 ──► integrated tailscale serve ──► loopback ──► nazar-gateway (host network)
+              8384     ──► manual tailscale serve ──► 127.0.0.1 ──► nazar-syncthing (UI)
 ```
+
+**Note:** The gateway container runs with `network_mode: host` and binds to loopback. Its integrated Tailscale Serve proxy (`tailscale: { mode: "serve" }`) handles HTTPS termination and exposes the gateway at `https://<tailscale-hostname>/`. Device pairing is auto-approved because connections are localhost.
 
 ## File Ownership
 
@@ -152,7 +154,7 @@ Tailscale ──► 22/tcp   ──► ALLOW ──► sshd (tailscale0 only)
 |------|-------|-----|
 | `/srv/nazar/vault/` | `1000:1000` | Containers run as uid 1000 |
 | `/srv/nazar/data/` | `1000:1000` | Persistent container state |
-| `/srv/nazar/.env` | `root:root` | Secrets, not readable by containers directly |
+| `/srv/nazar/.env` | `nazar:nazar` | Secrets (API keys, tokens), editable by nazar user |
 | `/opt/openclaw/` | `root:root` | Source code for Docker build |
 
 ## Extension Points

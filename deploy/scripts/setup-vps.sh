@@ -40,6 +40,7 @@ if [ ! -f "$NAZAR_ROOT/.env" ]; then
 else
     echo ".env already exists, skipping."
 fi
+chown nazar:nazar "$NAZAR_ROOT/.env"
 
 # 6. Build and start
 echo "Building and starting containers..."

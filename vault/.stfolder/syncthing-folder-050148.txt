@@ -1,0 +1,5 @@
+# This directory is a Syncthing folder marker.
+# Do not delete.
+
+folderID: wcoq2-fcsr7
+created: 2026-02-11T00:27:08Z

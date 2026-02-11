@@ -40,9 +40,11 @@ Defense-in-depth approach: multiple independent layers, each protecting against 
 | Everything else | — | — | DENIED |
 
 **Not exposed to public internet:**
-- Gateway API (18789) — bound to `127.0.0.1`
-- Syncthing UI (8384) — bound to `127.0.0.1`
+- Gateway API — bound to loopback, exposed via integrated Tailscale Serve (`tailscale: { mode: "serve" }` in docker-compose). Accessible only at `https://<tailscale-hostname>/` within your tailnet. Tailscale identity headers handle authentication automatically. No `trustedProxies` configuration needed since the proxy is integrated.
+- Syncthing UI (8384) — bound to `127.0.0.1`, proxied via manual `tailscale serve --tcp 8384`
 - SSH (22) — locked to `tailscale0` interface
+
+**`tailscale serve` proxies:** The Syncthing UI is bound to `127.0.0.1` and not directly reachable from the Tailscale interface. `tailscale serve --tcp` proxies tailnet traffic to localhost, keeping it accessible only within your tailnet. The gateway does not need this — it manages its own Tailscale Serve proxy automatically via integrated serve mode.
 
 **Tailscale provides:**
 - WireGuard-based encrypted tunnel
@@ -55,7 +57,8 @@ Defense-in-depth approach: multiple independent layers, each protecting against 
 **SSH:**
 - Key-only authentication (passwords disabled)
 - Root login disabled
-- Only the `nazar` user can SSH in
+- Only the `nazar` user is allowed to SSH in (`AllowUsers nazar`). The default cloud provider user (e.g., `debian`) is not permitted after setup.
+- TCP forwarding enabled (required for VSCode Remote SSH)
 - Max 3 auth attempts per connection
 - Fail2Ban bans IPs after 3 failed attempts (1 hour ban)
 
@@ -77,8 +80,8 @@ The OpenClaw container has limited access:
 |------|--------|
 | `/vault` | Read/write (bind mount) |
 | `/home/node/.openclaw` | Read/write (config + state) |
-| Host filesystem | None |
-| Host network | Only mapped ports |
+| Host filesystem | None (beyond bind mounts) |
+| Host network | Yes (`network_mode: host`) — binds to loopback only |
 | Other containers | None (default Docker network isolation) |
 
 The container runs as `node` user (uid 1000), not root.
@@ -138,7 +141,7 @@ Automatic reboot at 04:00 if a kernel update requires it. Unused kernels and dep
 | SSH brute force | Key-only auth + Fail2Ban + Tailscale-only |
 | Public port scanning | Only 22000/21027 exposed; no services on other ports |
 | Unauthorized gateway access | Token auth + bound to 127.0.0.1 |
-| Container escape | Non-root user, limited mounts, no host network |
+| Container escape | Non-root user, limited mounts, loopback-only binding (host network) |
 | Vault data exfiltration | Agent sandbox in group chats, MEMORY.md not loaded in groups |
 | Stale vulnerabilities | Unattended upgrades, auto-reboot |
 | Leaked API keys | Separate .env file, audit script checks vault for keys |

@@ -86,6 +86,8 @@ su - nazar -c "sudo whoami"
 
 **Ask the user:** "Can you SSH into the VPS as the `nazar` user? Try: `ssh nazar@<vps-ip>`"
 
+**Important:** After setup is complete, only the `nazar` user should be used for SSH access. The default cloud provider user (e.g., `debian` on OVH/Hetzner) should not be used. The SSH hardening in Phase 2 sets `AllowUsers nazar`, which prevents login as any other user.
+
 ---
 
 ## Phase 2: Harden SSH
@@ -115,7 +117,7 @@ LoginGraceTime 30
 KbdInteractiveAuthentication no
 X11Forwarding no
 AllowAgentForwarding no
-AllowTcpForwarding no
+AllowTcpForwarding yes  # Required for VSCode Remote SSH
 
 # Only allow the nazar user
 AllowUsers nazar
@@ -164,7 +166,7 @@ sudo ufw allow 21027/udp comment "Syncthing-Discovery"
 sudo ufw --force enable
 ```
 
-**Note:** Ports 18789 (gateway) and 8384 (syncthing UI) are NOT opened — they're bound to 127.0.0.1 and accessed via Tailscale only.
+**Note:** The gateway uses host networking with loopback binding (exposed automatically via integrated Tailscale Serve). Port 8384 (Syncthing UI) is NOT opened in UFW — it's bound to 127.0.0.1 and accessed via manual `tailscale serve` proxy.
 
 **Verify:**
 ```bash
@@ -323,6 +325,12 @@ sudo usermod -aG docker nazar
 
 **Important:** The user must log out and back in for the docker group to take effect.
 
+**Note:** The provisioning script also adds an `openclaw` CLI alias to `/home/nazar/.bashrc`:
+```bash
+alias openclaw="sudo docker exec -it nazar-gateway node dist/index.js"
+```
+This allows running OpenClaw commands directly (e.g., `openclaw configure`, `openclaw devices list`) without typing the full `docker exec` command.
+
 ```bash
 # Log out and back in, then verify:
 exit
@@ -340,9 +348,36 @@ docker compose version
 
 ---
 
-## Phase 8: Deploy the Nazar Stack
+## Phase 8: Expose Syncthing UI via Tailscale
+
+**Why:** The Syncthing UI is bound to `127.0.0.1` in Docker (not exposed publicly). Tailscale traffic arrives on the `tailscale0` interface, not loopback, so it can't reach `127.0.0.1`-bound ports directly. `tailscale serve` proxies tailnet traffic to localhost.
+
+**Note:** The gateway does NOT need manual `tailscale serve` setup. It uses integrated Tailscale Serve mode (`tailscale: { mode: "serve" }` in docker-compose) and manages its own proxy automatically, exposing the gateway at `https://<tailscale-hostname>/`.
+
+```bash
+# Proxy Syncthing UI (port 8384) — only manual proxy needed
+sudo tailscale serve --bg --tcp 8384 tcp://127.0.0.1:8384
+```
+
+**Verify:**
+```bash
+tailscale serve status
+# Should show Syncthing UI proxy active for 8384
+
+# From another device on the tailnet:
+# https://<tailscale-hostname>/  — Gateway (automatic, HTTPS)
+# http://<tailscale-ip>:8384     — Syncthing UI (manual proxy)
+```
+
+**Note:** The Syncthing UI proxy persists across reboots as long as Tailscale is running. Only devices on your tailnet can access it.
+
+---
+
+## Phase 9: Deploy the Nazar Stack
 
 **Why:** This is what we're here for — get OpenClaw + Syncthing running.
+
+**Note:** The docker-compose uses `network_mode: host` for the gateway container and includes integrated Tailscale Serve mode. The Tailscale CLI is included in the Dockerfile. The gateway binds to loopback and is automatically exposed at `https://<tailscale-hostname>/` via Tailscale Serve.
 
 ### Option A: Push deploy repo from local machine
 
@@ -395,8 +430,8 @@ docker compose restart
 docker compose ps
 # Both containers should be "healthy" or "running"
 
-curl -s http://127.0.0.1:18789
-# Gateway should respond
+curl -sk https://vps-claw.tail697e8f.ts.net/
+# Gateway should respond (via integrated Tailscale Serve)
 
 curl -s http://127.0.0.1:8384
 # Syncthing UI should respond
@@ -405,9 +440,28 @@ docker compose exec nazar-gateway ls /vault/
 # Should show vault folders (empty until Syncthing syncs)
 ```
 
+### Device pairing (first browser access)
+
+The first time a browser connects to the Control UI at `https://<tailscale-hostname>/`, the gateway requires device pairing. Approve it from the CLI:
+
+```bash
+openclaw devices list              # List pending pairing requests
+openclaw devices approve <request-id>   # Approve the device
+```
+
+### Run onboarding
+
+After deployment and device pairing, run the interactive setup wizard:
+
+```bash
+openclaw configure
+```
+
+This walks through WhatsApp linking, model configuration, and other initial settings.
+
 ---
 
-## Phase 9: Connect Syncthing
+## Phase 10: Connect Syncthing
 
 **Why:** Sync the Obsidian vault from user's devices to the VPS.
 
@@ -428,7 +482,7 @@ ls /srv/nazar/vault/
 
 ---
 
-## Phase 10: Final Security Audit
+## Phase 11: Final Security Audit
 
 Run through this checklist:
 
@@ -461,9 +515,9 @@ tailscale status
 cd /srv/nazar && docker compose ps
 # Expected: both containers running/healthy
 
-# 8. Gateway not exposed publicly
-ss -tlnp | grep 18789
-# Expected: 127.0.0.1:18789 (not 0.0.0.0)
+# 8. Gateway using host network with loopback binding
+docker inspect nazar-gateway --format='{{.HostConfig.NetworkMode}}'
+# Expected: host (gateway manages its own Tailscale Serve proxy)
 
 # 9. Syncthing UI not exposed publicly
 ss -tlnp | grep 8384
@@ -512,8 +566,8 @@ sudo chown -R 1000:1000 /srv/nazar/vault /srv/nazar/data
 | Service | Access | URL |
 |---------|--------|-----|
 | SSH | Tailscale | `ssh nazar@<tailscale-ip>` |
-| Gateway | Tailscale | `http://<tailscale-ip>:18789` |
-| Syncthing UI | Tailscale | `http://<tailscale-ip>:8384` |
+| Gateway | Tailscale (automatic) | `https://<tailscale-hostname>/` |
+| Syncthing UI | Tailscale (manual proxy) | `http://<tailscale-ip>:8384` |
 | Syncthing sync | Public | Ports 22000, 21027 |
 
 | Path | Contents |
@@ -524,3 +578,7 @@ sudo chown -R 1000:1000 /srv/nazar/vault /srv/nazar/data
 | `/srv/nazar/.env` | Secrets (API keys, tokens) |
 | `/srv/nazar/deploy/` | Deployment repo |
 | `/opt/openclaw/` | OpenClaw source (for Docker build) |
+
+| Alias | Command | Purpose |
+|-------|---------|---------|
+| `openclaw` | `sudo docker exec -it nazar-gateway node dist/index.js` | OpenClaw CLI (added to `~/.bashrc` during provisioning) |

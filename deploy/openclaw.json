@@ -29,7 +29,6 @@
     }
   },
   "tools": {
-    "elevated": { "ask": "off" },
     "sandbox": {
       "tools": {
         "allow": ["exec", "process", "read", "write", "edit", "sessions_list", "sessions_history"],
@@ -39,8 +38,9 @@
   },
   "gateway": {
     "port": 18789,
-    "bind": "lan",
-    "auth": { "mode": "token" }
+    "bind": "loopback",
+    "auth": { "mode": "token" },
+    "tailscale": { "mode": "serve" }
   },
   "channels": {
     "whatsapp": {

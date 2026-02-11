@@ -45,7 +45,21 @@ This runs all phases:
 - Builds and starts the containers
 - Adds swap if low memory
 
-### 3. Configure secrets
+### 3. Expose Syncthing UI via Tailscale
+
+The gateway manages its own Tailscale Serve proxy automatically (via integrated `tailscale: { mode: "serve" }` in docker-compose). No manual setup needed for the gateway.
+
+Syncthing UI still needs a manual `tailscale serve` proxy:
+
+```bash
+sudo tailscale serve --bg --tcp 8384 tcp://127.0.0.1:8384
+```
+
+After this:
+- Gateway: `https://<tailscale-hostname>/` (automatic, HTTPS)
+- Syncthing UI: `http://<tailscale-ip>:8384` (manual proxy, Tailscale only)
+
+### 4. Configure secrets
 
 ```bash
 ssh nazar@<tailscale-ip>
@@ -54,7 +68,7 @@ nano /srv/nazar/.env
 
 Fill in `ANTHROPIC_API_KEY`, `KIMI_API_KEY`, `WHATSAPP_NUMBER`.
 
-### 4. Restart with secrets
+### 5. Restart with secrets
 
 ```bash
 cd /srv/nazar && docker compose restart
@@ -96,7 +110,15 @@ bash install-docker.sh
 bash /srv/nazar/deploy/scripts/setup-vps.sh
 ```
 
-### 6. Configure and start
+### 6. Expose Syncthing UI via Tailscale
+
+The gateway manages its own Tailscale Serve proxy automatically. Only Syncthing UI needs manual setup:
+
+```bash
+sudo tailscale serve --bg --tcp 8384 tcp://127.0.0.1:8384
+```
+
+### 7. Configure and start
 
 ```bash
 nano /srv/nazar/.env
@@ -152,8 +174,8 @@ Build takes 10-15 minutes on a 2-core VPS. The image is ~3GB due to voice models
 
 | Port | Service | Binding | Access |
 |------|---------|---------|--------|
-| 18789 | OpenClaw Gateway | `127.0.0.1` | Tailscale only |
-| 8384 | Syncthing UI | `127.0.0.1` | Tailscale only |
+| 443 (HTTPS) | OpenClaw Gateway | loopback → Tailscale Serve | `https://<tailscale-hostname>/` (automatic) |
+| 8384 | Syncthing UI | `127.0.0.1` | `http://<tailscale-ip>:8384` (manual `tailscale serve`) |
 | 22000/tcp | Syncthing sync | `0.0.0.0` | Public (needed for sync) |
 | 22000/udp | Syncthing sync | `0.0.0.0` | Public (needed for sync) |
 | 21027/udp | Syncthing discovery | `0.0.0.0` | Public (needed for discovery) |
@@ -181,6 +203,19 @@ docker compose up -d
 # Stop
 docker compose down
 
+# Tailscale proxies
+tailscale serve status                                          # Check active proxies
+sudo tailscale serve --bg --tcp 8384 tcp://127.0.0.1:8384      # Enable Syncthing UI proxy
+sudo tailscale serve --tcp=8384 off                             # Disable Syncthing UI proxy
+# Note: Gateway proxy is managed automatically via integrated tailscale serve mode
+
+
+# OpenClaw CLI (alias set up automatically during provisioning in ~/.bashrc)
+# alias openclaw="sudo docker exec -it nazar-gateway node dist/index.js"
+openclaw configure                    # Interactive setup wizard
+openclaw doctor --fix                 # Health check + auto-fix
+openclaw devices list                 # List paired devices
+openclaw channels                     # Channel management
 # Security audit
 bash /srv/nazar/deploy/../vault/99-system/openclaw/skills/vps-setup/scripts/audit-vps.sh
 ```
@@ -211,9 +246,34 @@ docker compose up -d
 
 ```bash
 docker compose ps                                    # Both running
-curl -s http://127.0.0.1:18789                       # Gateway responds
-curl -s http://127.0.0.1:8384                        # Syncthing UI loads
+curl -sk https://vps-claw.tail697e8f.ts.net/         # Gateway responds via Tailscale Serve
+curl -s http://127.0.0.1:8384                        # Syncthing UI responds locally
+tailscale serve status                               # Syncthing UI proxy active for 8384
 docker compose exec nazar-gateway ls /vault/          # Vault folders visible
 docker compose exec nazar-gateway node -e "console.log('ok')"  # Node works
 bash audit-vps.sh                                    # All checks pass
 ```
+
+## First Browser Access
+
+The first time you open the Control UI (`https://<tailscale-hostname>/`) in a browser, the gateway will require **device pairing**. This is expected -- new devices must be approved before they can interact with the gateway.
+
+To approve the device, SSH into the VPS and run:
+
+```bash
+# List pending pairing requests
+openclaw devices list
+
+# Approve the pending request
+openclaw devices approve <request-id>
+```
+
+After approval, refresh the browser and the UI will load normally. Subsequent visits from the same browser are remembered.
+
+## Post-Deploy Setup
+
+After verification, complete the initial configuration:
+
+1. **Run onboarding:** `openclaw configure` -- interactive wizard to set up WhatsApp linking, model configuration, and other settings.
+2. **Connect Syncthing** to sync the vault from your devices.
+3. **Run a security audit:** `bash audit-vps.sh`

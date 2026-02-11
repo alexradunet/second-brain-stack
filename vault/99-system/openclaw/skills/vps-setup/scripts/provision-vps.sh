@@ -48,7 +48,7 @@ echo "  ╚═══════════════════════
 echo ""
 
 # ─────────────────────────────────────────────
-header "Phase 1/7: System Update"
+header "Phase 1/8: System Update"
 # ─────────────────────────────────────────────
 info "Updating system packages..."
 apt-get update -qq
@@ -57,7 +57,7 @@ apt-get install -y -qq curl git > /dev/null
 info "System updated."
 
 # ─────────────────────────────────────────────
-header "Phase 2/7: Create Service User"
+header "Phase 2/8: Create Service User"
 # ─────────────────────────────────────────────
 if id "nazar" &>/dev/null; then
     info "User 'nazar' already exists."
@@ -85,7 +85,7 @@ su - nazar -c "sudo -n whoami" | grep -q root || error "nazar user cannot sudo. 
 info "User 'nazar' verified."
 
 # ─────────────────────────────────────────────
-header "Phase 3/7: Harden SSH + Firewall + Fail2Ban"
+header "Phase 3/8: Harden SSH + Firewall + Fail2Ban"
 # ─────────────────────────────────────────────
 
 # SSH hardening
@@ -101,7 +101,7 @@ LoginGraceTime 30
 KbdInteractiveAuthentication no
 X11Forwarding no
 AllowAgentForwarding no
-AllowTcpForwarding no
+AllowTcpForwarding yes
 AllowUsers nazar
 EOF
 sshd -t || error "SSH config invalid!"
@@ -163,7 +163,7 @@ systemctl restart unattended-upgrades
 info "Auto-updates enabled."
 
 # ─────────────────────────────────────────────
-header "Phase 4/7: Install Tailscale"
+header "Phase 4/8: Install Tailscale"
 # ─────────────────────────────────────────────
 if command -v tailscale &>/dev/null && tailscale status &>/dev/null; then
     info "Tailscale already installed and authenticated."
@@ -188,7 +188,7 @@ fi
 info "Tailscale IP: $TS_IP"
 
 # ─────────────────────────────────────────────
-header "Phase 5/7: Lock SSH to Tailscale"
+header "Phase 5/8: Lock SSH to Tailscale"
 # ─────────────────────────────────────────────
 echo ""
 warn "Before locking SSH to Tailscale, test from another terminal:"
@@ -208,7 +208,7 @@ else
 fi
 
 # ─────────────────────────────────────────────
-header "Phase 6/7: Install Docker"
+header "Phase 6/8: Install Docker"
 # ─────────────────────────────────────────────
 if command -v docker &>/dev/null; then
     info "Docker already installed."
@@ -231,12 +231,18 @@ fi
 usermod -aG docker nazar 2>/dev/null || true
 info "User 'nazar' added to docker group."
 
+# Add openclaw CLI alias for nazar user
+if ! grep -q 'alias openclaw=' /home/nazar/.bashrc 2>/dev/null; then
+    echo 'alias openclaw="sudo docker exec -it nazar-gateway node dist/index.js"' >> /home/nazar/.bashrc
+    info "Added 'openclaw' CLI alias for nazar user."
+fi
+
 # Verify
 docker --version
 docker compose version
 
 # ─────────────────────────────────────────────
-header "Phase 7/7: Deploy Nazar Stack"
+header "Phase 7/8: Deploy Nazar Stack"
 # ─────────────────────────────────────────────
 NAZAR_ROOT="/srv/nazar"
 OPENCLAW_SRC="/opt/openclaw"
@@ -285,6 +291,7 @@ else
     else
         info ".env already exists, keeping it."
     fi
+    chown nazar:nazar "$NAZAR_ROOT/.env"
 
     # Add swap if low memory (< 2GB)
     TOTAL_MEM=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
@@ -307,6 +314,15 @@ else
 fi
 
 # ─────────────────────────────────────────────
+header "Phase 8/8: Expose Syncthing UI via Tailscale"
+# ─────────────────────────────────────────────
+info "Setting up tailscale serve proxy for Syncthing UI..."
+info "Syncthing UI is bound to 127.0.0.1 — tailscale serve proxies tailnet traffic to localhost."
+info "Note: Gateway proxy is automatic (integrated tailscale serve mode in docker-compose)."
+tailscale serve --bg --tcp 8384 tcp://127.0.0.1:8384 2>/dev/null || warn "Failed to set up Syncthing UI proxy"
+info "Syncthing UI proxy configured."
+
+# ─────────────────────────────────────────────
 header "Provisioning Complete!"
 # ─────────────────────────────────────────────
 
@@ -316,8 +332,9 @@ echo ""
 echo "  ┌───────────────────────────────────────────┐"
 echo "  │           Access Information               │"
 echo "  ├───────────────────────────────────────────┤"
+TS_HOSTNAME=$(tailscale status --json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['Self']['DNSName'].rstrip('.'))" 2>/dev/null || echo "<tailscale-hostname>")
 echo "  │  SSH:        ssh nazar@$TS_IP"
-echo "  │  Gateway:    http://$TS_IP:18789"
+echo "  │  Gateway:    https://$TS_HOSTNAME/"
 echo "  │  Syncthing:  http://$TS_IP:8384"
 echo "  ├───────────────────────────────────────────┤"
 echo "  │           Next Steps                       │"

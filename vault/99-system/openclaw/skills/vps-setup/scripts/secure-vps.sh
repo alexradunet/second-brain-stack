@@ -58,7 +58,7 @@ LoginGraceTime 30
 KbdInteractiveAuthentication no
 X11Forwarding no
 AllowAgentForwarding no
-AllowTcpForwarding no
+AllowTcpForwarding yes
 AllowUsers nazar
 EOF
 
