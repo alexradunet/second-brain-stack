@@ -119,16 +119,21 @@ bash /srv/nazar/deploy/scripts/setup-vps.sh
 openclaw configure
 ```
 
-## Option C: Claude Code Guided
+## Option C: AI-Assisted Bootstrap (Recommended)
 
-SSH into the VPS, install Claude Code, then:
+Use Claude Code or Kimi Code directly on the VPS for an interactive, guided setup.
 
+See the [Bootstrap Guide](bootstrap-guide.md) for complete instructions.
+
+**Quick version:**
+```bash
+# On VPS as root
+curl -fsSL https://raw.githubusercontent.com/<user>/second-brain/main/bootstrap/bootstrap.sh | bash
+
+# Then follow the instructions to launch your AI assistant
 ```
-Read /srv/nazar/deploy/../vault/99-system/openclaw/skills/vps-setup/SKILL.md
-and walk me through setting up this VPS
-```
 
-Claude Code will execute each phase interactively, pausing for confirmations.
+The AI assistant will guide you through each phase interactively, explaining every step.
 
 ## Directory Layout on VPS
 

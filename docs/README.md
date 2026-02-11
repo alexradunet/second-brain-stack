@@ -43,11 +43,12 @@ second-brain/
 
 | Document | Description |
 |----------|-------------|
+| [Bootstrap Guide](bootstrap-guide.md) | 🌟 AI-assisted VPS setup walkthrough |
 | [Architecture](architecture.md) | System design, components, data flow |
 | [Vault Structure](vault-structure.md) | PARA vault layout and conventions |
 | [Agent System](agent.md) | Nazar agent — workspace, personality, memory |
 | [Skills Reference](skills.md) | Available skills (obsidian, voice, vps-setup) |
-| [Deployment Guide](deployment.md) | VPS provisioning and Docker deployment |
+| [Deployment Guide](deployment.md) | Traditional scripted deployment |
 | [Security Model](security.md) | Hardening, Tailscale, secrets management |
 | [Git Sync](git-sync.md) | Multi-device vault synchronization |
 | [Troubleshooting](troubleshooting.md) | Common issues and fixes |
