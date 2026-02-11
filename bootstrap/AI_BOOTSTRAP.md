@@ -89,7 +89,7 @@ Guide the user through these phases in order:
    AllowAgentForwarding no
    AllowTcpForwarding yes  # Required for VSCode Remote SSH
    
-   # Only allow the deploy user
+   # Only allow the deploy user (adjust if using ubuntu or other)
    AllowUsers debian
    EOF
    
@@ -100,7 +100,7 @@ Guide the user through these phases in order:
    systemctl restart sshd
    ```
 
-4. **Configure UFW firewall:**
+5. **Configure UFW firewall:**
    ```bash
    ufw default deny incoming
    ufw default allow outgoing
@@ -108,13 +108,13 @@ Guide the user through these phases in order:
    ufw --force enable
    ```
 
-5. **Enable Fail2Ban:**
+6. **Enable Fail2Ban:**
    ```bash
    systemctl enable fail2ban
    systemctl start fail2ban
    ```
 
-6. **Enable unattended upgrades:**
+7. **Enable unattended upgrades:**
    ```bash
    apt install -y unattended-upgrades apt-listchanges
    
@@ -263,6 +263,8 @@ Guide the user through these phases in order:
    else
        echo "Error: deploy/ directory not found in $DEPLOY_DIR"
        echo "Make sure you cloned the full repository, not just the deploy folder"
+       echo "Expected structure: ~/nazar_deploy/deploy/"
+       ls -la ~/nazar_deploy/  # Show what's actually there
        exit 1
    fi
    ```

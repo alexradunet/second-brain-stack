@@ -42,7 +42,8 @@ npm install -g @moonshot-ai/kimi-code
 cd ~
 mkdir -p nazar_deploy
 cd nazar_deploy
-git clone <this-repository-url> .
+# Replace <your-username> with the GitHub username that owns the repo
+git clone https://github.com/<your-username>/easy-para-system-claw-vps.git .
 ```
 
 ### Step 4: Launch the AI assistant

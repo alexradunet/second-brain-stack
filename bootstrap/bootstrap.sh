@@ -231,7 +231,7 @@ read -p "Select (1-3): " repo_choice
 case $repo_choice in
     1)
         read -p "Enter your GitHub username: " github_user
-        REPO_URL="https://github.com/$github_user/nazar-second-brain.git"
+        REPO_URL="https://github.com/$github_user/easy-para-system-claw-vps.git"
         ;;
     2)
         read -p "Enter repository URL: " REPO_URL

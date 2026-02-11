@@ -102,7 +102,7 @@ npm install -g @moonshot-ai/kimi-code
 cd ~
 mkdir -p nazar_deploy
 cd nazar_deploy
-git clone https://github.com/<your-username>/nazar-second-brain.git .
+git clone https://github.com/<your-username>/easy-para-system-claw-vps.git .
 ```
 
 Or if you have a private fork:
@@ -110,7 +110,7 @@ Or if you have a private fork:
 cd ~
 mkdir -p nazar_deploy
 cd nazar_deploy
-git clone git@github.com:<your-username>/nazar-second-brain.git .
+git clone git@github.com:<your-username>/easy-para-system-claw-vps.git .
 ```
 
 ### 6. Launch the AI Assistant
