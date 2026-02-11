@@ -119,17 +119,17 @@ if [ "$TOTAL_MEM" -lt 2048 ] && [ ! -f /swapfile ]; then
     log_success "Swap enabled"
 fi
 
-# Install Node.js 20 LTS
+# Install Node.js 22 LTS (required by OpenClaw)
 if ! command -v node &> /dev/null; then
-    log_info "Installing Node.js 20 LTS..."
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - > /dev/null 2>&1
+    log_info "Installing Node.js 22 LTS..."
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - > /dev/null 2>&1
     apt-get install -y -qq nodejs
     log_success "Node.js installed: $(node --version)"
 else
     NODE_VERSION=$(node --version | cut -d'v' -f2 | cut -d'.' -f1)
-    if [ "$NODE_VERSION" -lt 18 ]; then
-        log_warn "Node.js version is < 18. Upgrading..."
-        curl -fsSL https://deb.nodesource.com/setup_20.x | bash - > /dev/null 2>&1
+    if [ "$NODE_VERSION" -lt 22 ]; then
+        log_warn "Node.js version is < 22. Upgrading..."
+        curl -fsSL https://deb.nodesource.com/setup_22.x | bash - > /dev/null 2>&1
         apt-get install -y -qq nodejs
         log_success "Node.js upgraded: $(node --version)"
     else
