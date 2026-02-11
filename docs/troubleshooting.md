@@ -389,6 +389,96 @@ sudo journalctl -u sshd --since "1 hour ago" | grep "Failed"
 sudo bash /srv/nazar/vault/99-system/openclaw/skills/vps-setup/scripts/audit-vps.sh
 ```
 
+---
+
+## Device Pairing Issues
+
+### "pairing required" when accessing Control UI
+
+**Symptom:** Browser shows "pairing required" or WebSocket disconnects with code 1008.
+
+**Cause:** OpenClaw requires explicit device approval for security. New browsers/devices must be approved before accessing the gateway.
+
+**Fix:**
+
+```bash
+# SSH into VPS and list pending devices
+ssh debian@<tailscale-ip>
+dopenclaw devices list
+
+# Approve by request ID
+dopenclaw devices approve <request-id>
+
+# Restart gateway to apply
+drestart
+```
+
+Or manually edit the device files:
+
+```bash
+# View pending request
+sudo cat /srv/nazar/data/openclaw/devices/pending.json
+
+# Move to paired (using Python)
+sudo python3 << 'PYEOF'
+import json
+with open('/srv/nazar/data/openclaw/devices/pending.json', 'r') as f:
+    pending = json.load(f)
+with open('/srv/nazar/data/openclaw/devices/paired.json', 'r') as f:
+    paired = json.load(f)
+for device_id, device_info in pending.items():
+    paired[device_id] = device_info
+    print(f'Approved: {device_id}')
+with open('/srv/nazar/data/openclaw/devices/paired.json', 'w') as f:
+    json.dump(paired, f, indent=2)
+with open('/srv/nazar/data/openclaw/devices/pending.json', 'w') as f:
+    json.dump({}, f)
+PYEOF
+
+# Restart gateway
+drestart
+```
+
+---
+
+## OpenClaw CLI Issues
+
+### "openclaw: command not found"
+
+**Symptom:** Running `openclaw` gives command not found.
+
+**Cause:** OpenClaw runs inside the Docker container, not on the host.
+
+**Fix:** Use the `dopenclaw` alias (configured during setup):
+
+```bash
+# Instead of:
+openclaw doctor
+
+# Use:
+dopenclaw doctor
+
+# Or the full docker command:
+docker compose -f /srv/nazar/deploy/docker-compose.yml exec openclaw-gateway npx openclaw doctor
+```
+
+### "exec failed: executable file not found"
+
+**Symptom:** `docker compose exec openclaw-gateway openclaw` fails.
+
+**Cause:** The `openclaw` binary isn't in the container's default PATH.
+
+**Fix:** Use `npx openclaw`:
+
+```bash
+docker compose -f /srv/nazar/deploy/docker-compose.yml exec openclaw-gateway npx openclaw <command>
+```
+
+Or use the alias:
+```bash
+dopenclaw <command>
+```
+
 ## General Diagnostics
 
 ### Quick status check

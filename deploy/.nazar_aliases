@@ -1,0 +1,19 @@
+# OpenClaw Docker Aliases
+
+dopenclaw() {
+    docker compose -f /srv/nazar/deploy/docker-compose.yml exec openclaw-gateway npx openclaw "$@"
+}
+
+alias dclaw=dopenclaw
+alias nazar-cli=dopenclaw
+
+dnazar() {
+    docker compose -f /srv/nazar/deploy/docker-compose.yml "$@"
+}
+
+alias dn=dnazar
+alias dlogs='dnazar logs -f openclaw-gateway'
+alias dps='dnazar ps'
+alias drestart='dnazar restart openclaw-gateway'
+alias dstop='dnazar stop openclaw-gateway'
+alias dstart='dnazar start openclaw-gateway'

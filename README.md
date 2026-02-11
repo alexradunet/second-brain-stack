@@ -89,6 +89,7 @@ second-brain/
 | Document                                       | Description                                   |
 | ---------------------------------------------- | --------------------------------------------- |
 | **[Bootstrap Guide](docs/bootstrap-guide.md)** | 🌟 AI-assisted VPS setup walkthrough          |
+| **[VPS Cheatsheet](docs/vps-setup-cheatsheet.md)** | Quick reference for VPS management        |
 | **[Architecture](docs/architecture.md)**       | System design, components, data flow          |
 | **[Vault Structure](docs/vault-structure.md)** | PARA vault layout and conventions             |
 | **[Agent System](docs/agent.md)**              | Nazar agent — workspace, personality, memory  |

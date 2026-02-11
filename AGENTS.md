@@ -429,14 +429,69 @@ See `docs/troubleshooting.md` for full details.
 
 ---
 
+## Gateway Management (Post-Setup)
+
+### Device Pairing
+
+New browsers/devices must be approved before accessing the Control UI:
+
+```bash
+# List pending devices
+dopenclaw devices list
+
+# Approve by request ID
+dopenclaw devices approve <request-id>
+
+# Restart gateway to apply
+drestart
+```
+
+Device files location:
+- `/srv/nazar/data/openclaw/devices/pending.json` — New requests
+- `/srv/nazar/data/openclaw/devices/paired.json` — Approved devices
+
+### Bash Aliases
+
+The following aliases are configured on the VPS (`~/.nazar_aliases`):
+
+| Alias | Command |
+|-------|---------|
+| `dopenclaw` | `docker compose ... exec openclaw-gateway npx openclaw` |
+| `dclaw` | Shorthand for `dopenclaw` |
+| `dnazar` or `dn` | Docker compose for Nazar stack |
+| `dps` | `dnazar ps` — Container status |
+| `dlogs` | `dnazar logs -f` — Follow logs |
+| `drestart` | `dnazar restart` — Restart gateway |
+
+### Common Operations
+
+```bash
+# Health check
+dopenclaw doctor
+
+# Fix auto-detected issues
+dopenclaw doctor --fix
+
+# Configure API keys and channels
+dopenclaw configure
+
+# View logs
+dlogs
+
+# Restart gateway
+drestart
+```
+
+---
+
 ## Extension Points
 
 | Want to... | Do this |
 |------------|---------|
 | Add a new skill | Create folder in `vault/99-system/openclaw/skills/` |
 | Change agent personality | Edit `vault/99-system/openclaw/workspace/SOUL.md` |
-| Add an LLM provider | Run `openclaw configure` |
-| Add a channel | Run `openclaw configure` (WhatsApp, Telegram, etc.) |
+| Add an LLM provider | Run `dopenclaw configure` |
+| Add a channel | Run `dopenclaw configure` (WhatsApp, Telegram, etc.) |
 | Change vault structure | Rename folders, update skills that reference paths |
 
 ---

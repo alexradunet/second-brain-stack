@@ -167,12 +167,57 @@ Then re-run the AI assistant.
 
 ---
 
+## Post-Setup: Essential Commands
+
+After setup is complete, SSH into your VPS and use these shortcuts:
+
+### Bash Aliases (Pre-configured)
+
+```bash
+# OpenClaw CLI (inside container)
+dopenclaw doctor              # Check health
+dopenclaw doctor --fix        # Fix issues
+dopenclaw configure           # Configure API keys
+dopenclaw devices list        # List devices
+dopenclaw devices approve <id> # Approve new device
+
+# Docker shortcuts
+dps                           # Container status
+dlogs                         # View logs
+drestart                      # Restart gateway
+```
+
+See **[VPS Setup Cheatsheet](docs/vps-setup-cheatsheet.md)** for full command reference.
+
+### Device Pairing
+
+When accessing the Control UI from a new browser:
+1. Open `https://<your-tailscale-hostname>/`
+2. You'll see "pairing required" — SSH into VPS and run:
+   ```bash
+   dopenclaw devices list
+   dopenclaw devices approve <request-id>
+   drestart
+   ```
+
+### Clone Vault Locally
+
+```bash
+git clone debian@<tailscale-ip>:/srv/nazar/vault.git ~/nazar-vault
+```
+
+Then point Obsidian to `~/nazar-vault`.
+
+---
+
 ## Next Steps
 
-1. Complete this bootstrap flow
-2. Configure `openclaw` (the AI assistant will guide you)
-3. Set up your devices (phone, laptop) to sync with the vault
-4. Start capturing notes!
+1. ✅ Complete this bootstrap flow
+2. ✅ Configure `openclaw` (add API keys: `dopenclaw configure`)
+3. ✅ Approve your devices (`dopenclaw devices approve`)
+4. ✅ Clone vault locally and open in Obsidian
+5. ✅ Install Obsidian Git plugin for auto-sync
+6. 🎉 Start capturing notes!
 
 ---
 
