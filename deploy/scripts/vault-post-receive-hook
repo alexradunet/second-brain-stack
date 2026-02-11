@@ -22,8 +22,9 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
 fi
 
 # Fast-forward working copy to match what was pushed
-git fetch origin main 2>>"$LOG"
-git reset --hard origin/main 2>>"$LOG"
+BRANCH=$(git branch --show-current)
+git fetch origin "$BRANCH" 2>>"$LOG"
+git reset --hard "origin/$BRANCH" 2>>"$LOG"
 log "working copy updated to $(git rev-parse --short HEAD)"
 
 # Re-apply stashed agent writes
