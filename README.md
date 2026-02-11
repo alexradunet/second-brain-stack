@@ -4,18 +4,37 @@ An AI-assisted personal knowledge management system built on Obsidian, powered b
 
 **Architecture**: Docker containers with shared vault volume — simple, secure, reproducible.
 
+**Setup**: Designed for AI agent assistance (Claude Code, Kimi Code).
+
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start (AI Agent Recommended)
+
+The easiest way to set up is using an AI agent (Claude Code or Kimi Code) on your VPS:
+
+```bash
+# On your fresh OVHcloud Debian 13 VPS (as root):
+curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/vault/99-system/openclaw/skills/vps-setup/scripts/nazar-ai-setup.sh \
+    -o /usr/local/bin/nazar-ai-setup && chmod +x /usr/local/bin/nazar-ai-setup
+
+# Then let your AI agent handle the rest:
+nazar-ai-setup run
+```
+
+**Why AI agent setup?**
+- ✅ Checkpoint/resume — safely handles interruptions
+- ✅ Pre-flight validation — catches issues before they cause problems  
+- ✅ Machine-readable state — AI can track and report progress
+- ✅ Idempotent — safe to re-run if something fails
+
+### Manual Setup (If You Prefer)
 
 ```bash
 # On your fresh OVHcloud Debian 13 VPS (as debian user):
 curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/docker/setup.sh | bash
-
-# Follow the on-screen instructions
 ```
 
-See [docker/VPS-GUIDE.md](docker/VPS-GUIDE.md) for detailed setup instructions.
+See [docker/VPS-GUIDE.md](docker/VPS-GUIDE.md) for detailed manual setup instructions.
 
 ---
 
@@ -91,9 +110,33 @@ second-brain/
 
 ## Setup Guide
 
-### 1. Deploy on VPS
+### Recommended: AI Agent Setup
 
-Run the setup script on a fresh OVHcloud Debian 13 VPS:
+If you have Claude Code or Kimi Code installed on your VPS:
+
+```bash
+# Download the AI setup tool
+sudo curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/vault/99-system/openclaw/skills/vps-setup/scripts/nazar-ai-setup.sh \
+    -o /usr/local/bin/nazar-ai-setup && sudo chmod +x /usr/local/bin/nazar-ai-setup
+
+# Check status
+nazar-ai-setup status
+
+# Run full setup
+nazar-ai-setup run
+```
+
+The AI setup tool provides:
+- **Validation** — Checks prerequisites before starting
+- **Checkpoints** — Tracks progress, safe to resume if interrupted
+- **JSON output** — Use `--json` for machine-readable status
+- **Phase control** — Run `nazar-ai-setup run <phase>` to resume from a specific point
+
+See the [VPS Setup Skill](vault/99-system/openclaw/skills/vps-setup/SKILL.md) for AI agent documentation.
+
+### Manual Setup
+
+If you prefer to set up manually:
 
 ```bash
 # Create debian user first (as root)
@@ -140,7 +183,8 @@ Once infrastructure is running, configure services through their own UIs:
 
 | Document | Description |
 |----------|-------------|
-| `docker/VPS-GUIDE.md` | OVHcloud Debian 13 VPS deployment guide |
+| `vault/99-system/openclaw/skills/vps-setup/SKILL.md` | **AI Agent Setup Guide** — for Claude Code/Kimi Code |
+| `docker/VPS-GUIDE.md` | OVHcloud Debian 13 VPS deployment guide (manual) |
 | `docker/SECURITY.md` | Security hardening and best practices |
 | `docker/MIGRATION.md` | Migration from old systemd setup |
 | `docs/troubleshooting.md` | Common infrastructure issues and fixes |

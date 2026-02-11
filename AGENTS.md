@@ -167,7 +167,40 @@ Local speech-to-text (Whisper) and text-to-speech (Piper).
 
 ## Bootstrap and Deployment
 
-### Quick Deploy
+### AI Agent Setup (Recommended for AI Agents)
+
+Use the AI-optimized setup tool with checkpoint/resume and JSON output:
+
+```bash
+# Download the AI setup tool
+sudo curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/vault/99-system/openclaw/skills/vps-setup/scripts/nazar-ai-setup.sh \
+    -o /usr/local/bin/nazar-ai-setup && sudo chmod +x /usr/local/bin/nazar-ai-setup
+
+# Check current state
+nazar-ai-setup --json status
+
+# Run full setup
+nazar-ai-setup run
+
+# Or run phases individually (for error handling)
+nazar-ai-setup run validate
+nazar-ai-setup run user
+nazar-ai-setup run security
+nazar-ai-setup run docker
+nazar-ai-setup run services
+nazar-ai-setup run tailscale  # May require user auth
+nazar-ai-setup run verify
+```
+
+**Features for AI agents:**
+- **Checkpoint file** (`~/.nazar-setup-state`) — tracks progress, resume after interruption
+- **JSON output** (`--json`) — machine-readable for parsing
+- **Idempotent** — safe to re-run any phase
+- **Validation** — pre-flight checks before each phase
+
+See [vps-setup skill](vault/99-system/openclaw/skills/vps-setup/SKILL.md) for AI agent workflows.
+
+### Manual Setup (Human-Friendly)
 
 ```bash
 # On fresh OVHcloud Debian 13 VPS
@@ -355,6 +388,7 @@ chown -R 1000:1000 ~/nazar/vault
 
 | Document | Description |
 |----------|-------------|
+| `vault/99-system/openclaw/skills/vps-setup/SKILL.md` | **VPS Setup Skill** — AI agent provisioning guide |
 | `docker/README.md` | Docker deployment guide |
 | `docker/VPS-GUIDE.md` | OVHcloud Debian 13 VPS deployment guide |
 | `docker/SECURITY.md` | Security hardening and best practices |
