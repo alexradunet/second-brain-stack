@@ -26,6 +26,28 @@ openclaw configure
 git clone debian@<tailscale-ip>:/srv/nazar/vault.git ~/vault
 ```
 
+## Configuration
+
+`setup-vps.sh` reads these environment variables (all optional, sensible defaults):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NAZAR_ROOT` | `/srv/nazar` | Base directory for the installation |
+| `DEPLOY_USER` | `debian` | OS user that owns files and runs cron jobs |
+| `VAULT_GIT_REMOTE` | *(unset)* | External git remote for the vault (e.g. `git@github.com:you/vault.git`). If unset, a local bare repo is created at `$NAZAR_ROOT/vault.git` |
+
+Example — deploy under a different user and path:
+
+```bash
+sudo NAZAR_ROOT=/opt/nazar DEPLOY_USER=nazar bash scripts/setup-vps.sh
+```
+
+Example — use GitHub as the vault remote instead of a local bare repo:
+
+```bash
+sudo VAULT_GIT_REMOTE=git@github.com:youruser/vault.git bash scripts/setup-vps.sh
+```
+
 ## Files
 
 | File | Purpose |

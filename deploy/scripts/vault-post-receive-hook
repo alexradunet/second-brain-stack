@@ -1,11 +1,11 @@
 #!/bin/bash
-# post-receive hook for /srv/nazar/vault.git
-# Deploys pushed content to the working copy at /srv/nazar/vault/
+# post-receive hook for the vault bare repo
+# Deploys pushed content to the vault working copy
 # Preserves uncommitted agent writes (auto-commit cron picks those up)
 set -uo pipefail
 
-VAULT_WORK="/srv/nazar/vault"
-LOG="/srv/nazar/data/git-sync.log"
+VAULT_WORK="${VAULT_DIR:-/srv/nazar/vault}"
+LOG="${NAZAR_DATA_DIR:-/srv/nazar/data}/git-sync.log"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') post-receive: $*" >> "$LOG"; }
 

@@ -20,6 +20,16 @@ Laptop (Obsidian)  ◄──── git push/pull over SSH ────►  VPS (
 - **Agent writes on VPS**: Cron job commits and pushes to bare repo every 5 minutes
 - **Pull on laptop/phone**: Get both your synced changes and agent writes
 
+## External Git Remote (GitHub/GitLab)
+
+Instead of the local bare repo, you can use an external git remote. Set `VAULT_GIT_REMOTE` when running setup:
+
+```bash
+sudo VAULT_GIT_REMOTE=git@github.com:youruser/vault.git bash scripts/setup-vps.sh
+```
+
+This skips creating the local bare repo and post-receive hook. The auto-commit cron still runs and pushes to the external remote. Clients clone directly from GitHub/GitLab instead of the VPS.
+
 ## Architecture on VPS
 
 | Path | Purpose |
@@ -46,7 +56,7 @@ Permissions use a shared `vault` group with setgid:
 git clone debian@<tailscale-ip>:/srv/nazar/vault.git ~/vault
 
 # Or if using Tailscale MagicDNS:
-git clone debian@vps-claw:/srv/nazar/vault.git ~/vault
+git clone debian@<tailscale-hostname>:/srv/nazar/vault.git ~/vault
 ```
 
 **With Obsidian Git plugin:**

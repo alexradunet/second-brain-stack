@@ -4,8 +4,8 @@
 # Only commits if there are actual changes.
 set -uo pipefail
 
-VAULT_WORK="/srv/nazar/vault"
-LOG="/srv/nazar/data/git-sync.log"
+VAULT_WORK="${VAULT_DIR:-/srv/nazar/vault}"
+LOG="${NAZAR_DATA_DIR:-/srv/nazar/data}/git-sync.log"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') auto-commit: $*" >> "$LOG"; }
 

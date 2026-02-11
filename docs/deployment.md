@@ -17,6 +17,28 @@ The gateway bind-mounts the vault working copy at `/srv/nazar/vault/`. Vault syn
 - Root SSH access (initial setup)
 - A Tailscale account ([login.tailscale.com](https://login.tailscale.com))
 
+## Configuration
+
+The setup script accepts these environment variables (all optional):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NAZAR_ROOT` | `/srv/nazar` | Base directory for the installation |
+| `DEPLOY_USER` | `debian` | OS user that owns files and runs cron |
+| `VAULT_GIT_REMOTE` | *(unset)* | External git remote for the vault. If unset, a local bare repo is created |
+
+Pass them when running setup:
+
+```bash
+sudo NAZAR_ROOT=/opt/nazar DEPLOY_USER=myuser bash scripts/setup-vps.sh
+```
+
+To use GitHub/GitLab as your vault remote instead of a local bare repo:
+
+```bash
+sudo VAULT_GIT_REMOTE=git@github.com:you/vault.git bash scripts/setup-vps.sh
+```
+
 ## Option A: Fully Automated (One Script)
 
 ### 1. Copy deploy repo to VPS
@@ -217,7 +239,7 @@ docker compose up -d
 
 ```bash
 docker compose ps                                    # Gateway running
-curl -sk https://vps-claw.tail697e8f.ts.net/         # Gateway responds via Tailscale Serve
+curl -sk https://<tailscale-hostname>/                 # Gateway responds via Tailscale Serve
 docker compose exec nazar-gateway ls /vault/          # Vault folders visible
 docker compose exec nazar-gateway node -e "console.log('ok')"  # Node works
 git -C /srv/nazar/vault log --oneline -5             # Git history exists

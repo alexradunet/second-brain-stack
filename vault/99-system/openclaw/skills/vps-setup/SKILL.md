@@ -384,7 +384,7 @@ This interactive wizard walks through model selection, API key entry, and channe
 docker compose ps
 # Gateway should be "healthy" or "running"
 
-curl -sk https://vps-claw.tail697e8f.ts.net/
+curl -sk https://<tailscale-hostname>/
 # Gateway should respond (via integrated Tailscale Serve)
 
 docker compose exec nazar-gateway ls /vault/

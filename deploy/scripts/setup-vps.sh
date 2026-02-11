@@ -2,25 +2,27 @@
 set -e
 
 DEPLOY_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-NAZAR_ROOT="/srv/nazar"
+NAZAR_ROOT="${NAZAR_ROOT:-/srv/nazar}"
+DEPLOY_USER="${DEPLOY_USER:-debian}"
 OPENCLAW_SRC="/opt/openclaw"
 
 echo "=== Nazar VPS Setup ==="
+echo "Root: $NAZAR_ROOT | User: $DEPLOY_USER"
 
 # 1. Create directory structure
 echo "Creating directory structure..."
 mkdir -p "$NAZAR_ROOT"/{vault,data/openclaw,scripts}
-chown -R debian:debian "$NAZAR_ROOT"
+chown -R "$DEPLOY_USER":"$DEPLOY_USER" "$NAZAR_ROOT"
 
-# 2. Set up vault group (shared access: debian user + container uid 1000)
+# 2. Set up vault group (shared access: deploy user + container uid 1000)
 echo "Setting up vault group..."
 if ! getent group vault >/dev/null 2>&1; then
     groupadd vault
 fi
-usermod -aG vault debian 2>/dev/null || true
+usermod -aG vault "$DEPLOY_USER" 2>/dev/null || true
 
 # Set vault ownership and setgid (new files inherit group)
-chown -R debian:vault "$NAZAR_ROOT/vault"
+chown -R "$DEPLOY_USER":vault "$NAZAR_ROOT/vault"
 chmod 2775 "$NAZAR_ROOT/vault"
 find "$NAZAR_ROOT/vault" -type d -exec chmod 2775 {} +
 find "$NAZAR_ROOT/vault" -type f -exec chmod 0664 {} +
@@ -42,39 +44,48 @@ else
     echo "Vault git repo already exists"
 fi
 
-# 4. Create bare repo (if not already)
-if [ ! -d "$NAZAR_ROOT/vault.git" ]; then
-    echo "Creating bare repo..."
-    git init --bare --shared=group "$NAZAR_ROOT/vault.git"
-    chown -R debian:vault "$NAZAR_ROOT/vault.git"
+# 4. Set up vault git remote
+if [ -z "${VAULT_GIT_REMOTE:-}" ]; then
+    # Local bare repo mode
+    if [ ! -d "$NAZAR_ROOT/vault.git" ]; then
+        echo "Creating bare repo..."
+        git init --bare --shared=group "$NAZAR_ROOT/vault.git"
+        chown -R "$DEPLOY_USER":vault "$NAZAR_ROOT/vault.git"
 
-    # Push vault contents to bare repo
-    cd "$NAZAR_ROOT/vault"
-    git remote add origin "$NAZAR_ROOT/vault.git" 2>/dev/null || git remote set-url origin "$NAZAR_ROOT/vault.git"
-    git push -u origin main 2>/dev/null || git push -u origin master 2>/dev/null || {
-        # Might be on default branch name — detect and push
-        BRANCH=$(git branch --show-current)
-        git push -u origin "$BRANCH"
-    }
+        # Push vault contents to bare repo
+        cd "$NAZAR_ROOT/vault"
+        git remote add origin "$NAZAR_ROOT/vault.git" 2>/dev/null || git remote set-url origin "$NAZAR_ROOT/vault.git"
+        git push -u origin main 2>/dev/null || git push -u origin master 2>/dev/null || {
+            # Might be on default branch name — detect and push
+            BRANCH=$(git branch --show-current)
+            git push -u origin "$BRANCH"
+        }
 
-    # Install post-receive hook
-    cp "$DEPLOY_DIR/scripts/vault-post-receive-hook" "$NAZAR_ROOT/vault.git/hooks/post-receive"
-    chmod +x "$NAZAR_ROOT/vault.git/hooks/post-receive"
-    chown debian:vault "$NAZAR_ROOT/vault.git/hooks/post-receive"
-    echo "Bare repo created with post-receive hook"
+        # Install post-receive hook
+        cp "$DEPLOY_DIR/scripts/vault-post-receive-hook" "$NAZAR_ROOT/vault.git/hooks/post-receive"
+        chmod +x "$NAZAR_ROOT/vault.git/hooks/post-receive"
+        chown "$DEPLOY_USER":vault "$NAZAR_ROOT/vault.git/hooks/post-receive"
+        echo "Bare repo created with post-receive hook"
+    else
+        echo "Bare repo already exists"
+    fi
 else
-    echo "Bare repo already exists"
+    # External git remote mode (GitHub, GitLab, etc.)
+    echo "Using external git remote: $VAULT_GIT_REMOTE"
+    cd "$NAZAR_ROOT/vault"
+    git remote add origin "$VAULT_GIT_REMOTE" 2>/dev/null || git remote set-url origin "$VAULT_GIT_REMOTE"
+    echo "Vault remote set to $VAULT_GIT_REMOTE"
 fi
 
 # 5. Install auto-commit cron script
 echo "Installing auto-commit script..."
 cp "$DEPLOY_DIR/scripts/vault-auto-commit.sh" "$NAZAR_ROOT/scripts/vault-auto-commit.sh"
 chmod +x "$NAZAR_ROOT/scripts/vault-auto-commit.sh"
-chown debian:debian "$NAZAR_ROOT/scripts/vault-auto-commit.sh"
+chown "$DEPLOY_USER":"$DEPLOY_USER" "$NAZAR_ROOT/scripts/vault-auto-commit.sh"
 
-# Install crontab for debian user (preserving existing entries)
-CRON_LINE="*/5 * * * * /srv/nazar/scripts/vault-auto-commit.sh"
-(crontab -u debian -l 2>/dev/null | grep -v vault-auto-commit; echo "$CRON_LINE") | crontab -u debian -
+# Install crontab for deploy user (preserving existing entries)
+CRON_LINE="*/5 * * * * $NAZAR_ROOT/scripts/vault-auto-commit.sh"
+(crontab -u "$DEPLOY_USER" -l 2>/dev/null | grep -v vault-auto-commit; echo "$CRON_LINE") | crontab -u "$DEPLOY_USER" -
 echo "Cron installed: vault auto-commit every 5 minutes"
 
 # 6. Clone OpenClaw source (if not already cloned)
@@ -94,6 +105,11 @@ echo "Copying compose and config files..."
 cp "$DEPLOY_DIR/docker-compose.yml" "$NAZAR_ROOT/docker-compose.yml"
 cp "$DEPLOY_DIR/openclaw.json" "$NAZAR_ROOT/data/openclaw/openclaw.json"
 
+# If NAZAR_ROOT differs from default, update the sandbox bind path in openclaw.json
+if [ "$NAZAR_ROOT" != "/srv/nazar" ]; then
+    sed -i "s|/srv/nazar/vault:/vault:rw|$NAZAR_ROOT/vault:/vault:rw|g" "$NAZAR_ROOT/data/openclaw/openclaw.json"
+fi
+
 # 9. Create .env from example if not exists
 if [ ! -f "$NAZAR_ROOT/.env" ]; then
     cp "$DEPLOY_DIR/.env.example" "$NAZAR_ROOT/.env"
@@ -104,7 +120,7 @@ if [ ! -f "$NAZAR_ROOT/.env" ]; then
 else
     echo ".env already exists, skipping."
 fi
-chown debian:debian "$NAZAR_ROOT/.env"
+chown "$DEPLOY_USER":"$DEPLOY_USER" "$NAZAR_ROOT/.env"
 
 # 10. Build and start
 echo "Building and starting containers..."
@@ -118,12 +134,22 @@ docker compose ps
 echo ""
 echo "=== Setup Complete ==="
 echo "Gateway: https://<tailscale-hostname>/ (access via Tailscale)"
-echo "Vault:   git clone debian@<tailscale-ip>:/srv/nazar/vault.git"
+if [ -z "${VAULT_GIT_REMOTE:-}" ]; then
+    echo "Vault:   git clone $DEPLOY_USER@<tailscale-ip>:$NAZAR_ROOT/vault.git"
+else
+    echo "Vault:   $VAULT_GIT_REMOTE"
+fi
 echo "Config:  $NAZAR_ROOT/.env"
 echo ""
 echo "Next steps:"
 echo "  1. Run 'openclaw configure' to set up models, API keys, and channels"
-echo "  2. Import your vault (if you have one):"
-echo "       cd ~/vault && git init && git remote add origin debian@<tailscale-ip>:/srv/nazar/vault.git"
-echo "       git add -A && git commit -m 'initial vault' && git push -u origin main"
-echo "     Or clone the empty vault: git clone debian@<tailscale-ip>:/srv/nazar/vault.git"
+if [ -z "${VAULT_GIT_REMOTE:-}" ]; then
+    echo "  2. Import your vault (if you have one):"
+    echo "       cd ~/vault && git init && git remote add origin $DEPLOY_USER@<tailscale-ip>:$NAZAR_ROOT/vault.git"
+    echo "       git add -A && git commit -m 'initial vault' && git push -u origin main"
+    echo "     Or clone the empty vault: git clone $DEPLOY_USER@<tailscale-ip>:$NAZAR_ROOT/vault.git"
+else
+    echo "  2. Import your vault (if you have one):"
+    echo "       cd ~/vault && git init && git remote add origin $VAULT_GIT_REMOTE"
+    echo "       git add -A && git commit -m 'initial vault' && git push -u origin main"
+fi
