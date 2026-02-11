@@ -1,0 +1,24 @@
+# Obsidian workspace state (device-specific, changes constantly)
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Temporary / editor files
+*.tmp
+*.swp
+*~
+
+# Obsidian trash
+.trash/
+
+# Syncthing artifacts (legacy)
+.stfolder
+.stignore

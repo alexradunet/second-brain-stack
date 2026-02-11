@@ -7,7 +7,7 @@ Defense-in-depth approach: multiple independent layers, each protecting against 
 ```
 ┌──────────────────────────────────────────────────┐
 │  Layer 1: Network (Tailscale + UFW)              │
-│  Only Syncthing sync ports are public            │
+│  Zero public ports — everything over Tailscale   │
 ├──────────────────────────────────────────────────┤
 │  Layer 2: Authentication (SSH keys + tokens)     │
 │  No passwords anywhere                           │
@@ -35,16 +35,14 @@ Defense-in-depth approach: multiple independent layers, each protecting against 
 | Port | Protocol | Interface | Purpose |
 |------|----------|-----------|---------|
 | 22 | TCP | `tailscale0` only | SSH (not public) |
-| 22000 | TCP/UDP | `0.0.0.0` | Syncthing file sync |
-| 21027 | UDP | `0.0.0.0` | Syncthing discovery |
 | Everything else | — | — | DENIED |
 
 **Not exposed to public internet:**
-- Gateway API — bound to loopback, exposed via integrated Tailscale Serve (`tailscale: { mode: "serve" }` in docker-compose). Accessible only at `https://<tailscale-hostname>/` within your tailnet. Tailscale identity headers handle authentication automatically. No `trustedProxies` configuration needed since the proxy is integrated.
-- Syncthing UI (8384) — bound to `127.0.0.1`, proxied via manual `tailscale serve --tcp 8384`
+- Gateway API — bound to loopback, exposed via integrated Tailscale Serve (`tailscale: { mode: "serve" }` in docker-compose). Accessible only at `https://<tailscale-hostname>/` within your tailnet. Tailscale identity headers handle authentication automatically.
 - SSH (22) — locked to `tailscale0` interface
+- Git vault access — uses SSH, same Tailscale-only path
 
-**`tailscale serve` proxies:** The Syncthing UI is bound to `127.0.0.1` and not directly reachable from the Tailscale interface. `tailscale serve --tcp` proxies tailnet traffic to localhost, keeping it accessible only within your tailnet. The gateway does not need this — it manages its own Tailscale Serve proxy automatically via integrated serve mode.
+**No public ports needed.** Previously Syncthing required ports 22000 and 21027 open to the public internet. Git-based sync uses SSH over Tailscale — zero public attack surface.
 
 **Tailscale provides:**
 - WireGuard-based encrypted tunnel
@@ -67,10 +65,10 @@ Defense-in-depth approach: multiple independent layers, each protecting against 
 - Token stored in `.env` on host, passed via environment variable
 - Gateway rejects unauthenticated requests
 
-**Syncthing:**
-- Device ID authentication (cryptographic identity)
-- Only pre-approved devices can connect
-- UI password set during first access
+**Vault Git Access:**
+- Authenticated via SSH keys (same as SSH login)
+- Only `nazar` user can push/pull
+- `vault` group with setgid ensures correct file permissions
 
 ### 3. Container Isolation
 
@@ -139,13 +137,13 @@ Automatic reboot at 04:00 if a kernel update requires it. Unused kernels and dep
 | Threat | Mitigation |
 |--------|-----------|
 | SSH brute force | Key-only auth + Fail2Ban + Tailscale-only |
-| Public port scanning | Only 22000/21027 exposed; no services on other ports |
+| Public port scanning | Zero public ports — nothing to scan |
 | Unauthorized gateway access | Token auth + bound to 127.0.0.1 |
 | Container escape | Non-root user, limited mounts, loopback-only binding (host network) |
 | Vault data exfiltration | Agent sandbox in group chats, MEMORY.md not loaded in groups |
 | Stale vulnerabilities | Unattended upgrades, auto-reboot |
 | Leaked API keys | Separate .env file, audit script checks vault for keys |
-| Syncthing interception | P2P TLS encryption, device ID authentication |
+| Vault interception in transit | Git over SSH over Tailscale (WireGuard encryption) |
 | Lost VPS access | Tailscale as backup path, VPS provider web console as last resort |
 
 ## Security Audit
@@ -161,12 +159,15 @@ Checks:
 2. Password auth disabled
 3. SSH restricted to `nazar` user
 4. UFW active with correct rules
-5. Gateway/Syncthing UI not publicly exposed
-6. Fail2Ban running
-7. Auto-updates enabled
-8. Tailscale connected
-9. Docker containers running
-10. No API keys in vault files
+5. No Syncthing ports open (legacy)
+6. Gateway not publicly exposed
+7. Fail2Ban running
+8. Auto-updates enabled
+9. Tailscale connected
+10. Docker container running
+11. Vault git repo configured (bare repo, hook, cron)
+12. vault group and permissions correct
+13. No API keys in vault files
 
 ## Emergency Access
 

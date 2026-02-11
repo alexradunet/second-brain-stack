@@ -65,10 +65,11 @@ else
     fail "Gateway port (18789) exposed publicly — should be 127.0.0.1 only"
 fi
 
-if ! sudo ufw status | grep -q "8384"; then
-    pass "Syncthing UI (8384) not exposed publicly"
+# Syncthing ports should NOT be open anymore
+if sudo ufw status | grep -q "22000\|21027"; then
+    warn "Syncthing ports (22000/21027) still open in UFW — remove them"
 else
-    fail "Syncthing UI (8384) exposed publicly — should be 127.0.0.1 only"
+    pass "No Syncthing ports open (correct — using git sync)"
 fi
 echo ""
 
@@ -127,7 +128,6 @@ echo ""
 echo "Nazar Containers:"
 if [ -f /srv/nazar/docker-compose.yml ]; then
     GW_STATUS=$(docker inspect --format='{{.State.Status}}' nazar-gateway 2>/dev/null || echo "not found")
-    ST_STATUS=$(docker inspect --format='{{.State.Status}}' nazar-syncthing 2>/dev/null || echo "not found")
 
     if [ "$GW_STATUS" = "running" ]; then
         pass "nazar-gateway: running"
@@ -135,28 +135,79 @@ if [ -f /srv/nazar/docker-compose.yml ]; then
         fail "nazar-gateway: $GW_STATUS"
     fi
 
-    if [ "$ST_STATUS" = "running" ]; then
-        pass "nazar-syncthing: running"
+    # Syncthing should NOT be running
+    ST_STATUS=$(docker inspect --format='{{.State.Status}}' nazar-syncthing 2>/dev/null || echo "not found")
+    if [ "$ST_STATUS" = "not found" ]; then
+        pass "nazar-syncthing: removed (correct — using git sync)"
     else
-        fail "nazar-syncthing: $ST_STATUS"
-    fi
-
-    # Check port bindings
-    GW_BIND=$(docker inspect --format='{{range $p, $conf := .NetworkSettings.Ports}}{{if eq $p "18789/tcp"}}{{range $conf}}{{.HostIp}}{{end}}{{end}}{{end}}' nazar-gateway 2>/dev/null || echo "")
-    if [ "$GW_BIND" = "127.0.0.1" ]; then
-        pass "Gateway bound to 127.0.0.1 (Tailscale-only)"
-    elif [ -n "$GW_BIND" ]; then
-        fail "Gateway bound to $GW_BIND (should be 127.0.0.1)"
-    fi
-
-    ST_BIND=$(docker inspect --format='{{range $p, $conf := .NetworkSettings.Ports}}{{if eq $p "8384/tcp"}}{{range $conf}}{{.HostIp}}{{end}}{{end}}{{end}}' nazar-syncthing 2>/dev/null || echo "")
-    if [ "$ST_BIND" = "127.0.0.1" ]; then
-        pass "Syncthing UI bound to 127.0.0.1 (Tailscale-only)"
-    elif [ -n "$ST_BIND" ]; then
-        fail "Syncthing UI bound to $ST_BIND (should be 127.0.0.1)"
+        warn "nazar-syncthing still exists ($ST_STATUS) — remove it"
     fi
 else
     warn "No docker-compose.yml at /srv/nazar/ (stack not deployed yet)"
+fi
+echo ""
+
+# ── Vault Git Sync ──
+echo "Vault Git Sync:"
+if [ -d /srv/nazar/vault/.git ]; then
+    pass "Vault is a git repo"
+
+    # Check shared repository config
+    SHARED=$(git -C /srv/nazar/vault config --get core.sharedRepository 2>/dev/null || echo "")
+    if [ "$SHARED" = "group" ] || [ "$SHARED" = "1" ]; then
+        pass "core.sharedRepository=group"
+    else
+        warn "core.sharedRepository not set to group (currently: '$SHARED')"
+    fi
+
+    # Check remote points to bare repo
+    REMOTE=$(git -C /srv/nazar/vault remote get-url origin 2>/dev/null || echo "")
+    if [ "$REMOTE" = "/srv/nazar/vault.git" ]; then
+        pass "Remote origin points to bare repo"
+    elif [ -n "$REMOTE" ]; then
+        warn "Remote origin: $REMOTE (expected /srv/nazar/vault.git)"
+    else
+        fail "No remote origin configured"
+    fi
+
+    # Check working copy status
+    if git -C /srv/nazar/vault diff --quiet 2>/dev/null && git -C /srv/nazar/vault diff --cached --quiet 2>/dev/null; then
+        pass "Working copy clean"
+    else
+        warn "Working copy has uncommitted changes (auto-commit cron will pick them up)"
+    fi
+else
+    fail "Vault is NOT a git repo"
+fi
+
+if [ -d /srv/nazar/vault.git ]; then
+    pass "Bare repo exists"
+    if [ -x /srv/nazar/vault.git/hooks/post-receive ]; then
+        pass "Post-receive hook installed"
+    else
+        fail "Post-receive hook missing or not executable"
+    fi
+else
+    fail "Bare repo /srv/nazar/vault.git not found"
+fi
+
+# Check auto-commit cron
+if crontab -u nazar -l 2>/dev/null | grep -q vault-auto-commit; then
+    pass "Auto-commit cron installed"
+else
+    fail "Auto-commit cron not installed for nazar user"
+fi
+
+# Check vault group
+if getent group vault >/dev/null 2>&1; then
+    pass "vault group exists"
+    if id -nG nazar 2>/dev/null | grep -qw vault; then
+        pass "nazar user in vault group"
+    else
+        fail "nazar user NOT in vault group"
+    fi
+else
+    fail "vault group does not exist"
 fi
 echo ""
 
@@ -191,7 +242,7 @@ if [ -d /srv/nazar/vault ]; then
     if [ "$FOLDER_COUNT" -gt 0 ]; then
         pass "Vault populated ($FOLDER_COUNT folders, owner: $VAULT_OWNER)"
     else
-        warn "Vault exists but empty (connect Syncthing to populate)"
+        warn "Vault exists but empty (clone vault content via git)"
     fi
 else
     warn "Vault directory not found"

@@ -34,25 +34,3 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-
-  syncthing:
-    image: syncthing/syncthing:latest
-    container_name: nazar-syncthing
-    restart: unless-stopped
-    environment:
-      - PUID=1000
-      - PGID=1000
-    volumes:
-      - ${VAULT_DIR:-./vault}:/var/syncthing/vault
-      - ./data/syncthing:/var/syncthing/config
-    ports:
-      - "127.0.0.1:8384:8384"     # Syncthing UI (Tailscale only)
-      - "22000:22000/tcp"           # Sync protocol
-      - "22000:22000/udp"
-      - "21027:21027/udp"           # Discovery
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8384"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s

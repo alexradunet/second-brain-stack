@@ -1,0 +1,38 @@
+#!/bin/bash
+# post-receive hook for /srv/nazar/vault.git
+# Deploys pushed content to the working copy at /srv/nazar/vault/
+# Preserves uncommitted agent writes (auto-commit cron picks those up)
+set -uo pipefail
+
+VAULT_WORK="/srv/nazar/vault"
+LOG="/srv/nazar/data/git-sync.log"
+
+log() { echo "$(date '+%Y-%m-%d %H:%M:%S') post-receive: $*" >> "$LOG"; }
+
+log "push received"
+
+cd "$VAULT_WORK" || { log "ERROR: cannot cd to $VAULT_WORK"; exit 1; }
+
+# Stash any uncommitted agent writes
+STASH_NEEDED=false
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    STASH_NEEDED=true
+    git stash --quiet --include-untracked 2>>"$LOG"
+    log "stashed uncommitted agent writes"
+fi
+
+# Fast-forward working copy to match what was pushed
+git fetch origin main 2>>"$LOG"
+git reset --hard origin/main 2>>"$LOG"
+log "working copy updated to $(git rev-parse --short HEAD)"
+
+# Re-apply stashed agent writes
+if [ "$STASH_NEEDED" = true ]; then
+    if git stash pop --quiet 2>>"$LOG"; then
+        log "re-applied stashed agent writes"
+    else
+        log "WARNING: stash pop had conflicts — agent writes in stash, resolve manually"
+    fi
+fi
+
+log "done"
