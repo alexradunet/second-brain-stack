@@ -8,41 +8,39 @@ How Nazar works under the hood.
 ┌─────────────────────────────────────────────────────────────────┐
 │                        OVH VPS (Debian 13)                      │
 │                                                                  │
-│  Git (SSH over Tailscale) ◄──►  /srv/nazar/vault.git (bare repo)  │
-│                                          │ post-receive hook       │
-│                                          ▼                        │
-│                               /srv/nazar/vault/ (working copy)    │
-│                                          │ bind mount             │
+│  Syncthing (P2P over Tailscale) ◄──► /home/nazar/vault           │
+│                                          │ direct filesystem      │
 │                                          ▼                        │
 │  ┌─────────────────┐     ┌──────────────────────────────────┐   │
-│  │  OpenClaw GW     │────►│  /vault (inside container)       │   │
-│  │  (container)     │     │  read/write vault only           │   │
-│  │  host network    │     └──────────────────────────────────┘   │
+│  │  OpenClaw GW     │────►│  /home/nazar/vault                │   │
+│  │  (systemd user   │     │  read/write vault only            │   │
+│  │   service)       │     └──────────────────────────────────┘   │
 │  └─────────────────┘                                              │
 │          ▲                                                        │
-│          │ Tailscale (100.x.x.x)                                 │
+│          │ Tailscale Serve (HTTPS)                                │
 │          │                                                        │
 └──────────┼────────────────────────────────────────────────────────┘
            │
-     Your devices (phone, laptop)
+     Your devices (phone, laptop) via Tailscale (100.x.x.x)
 ```
 
 ## Components
 
-### 1. OpenClaw Gateway (Docker container)
+### 1. OpenClaw Gateway (systemd user service)
 
-- Official OpenClaw Docker image extended with voice tools
+- Installed globally via `npm install -g openclaw`
+- Runs as the `nazar` user under systemd (`openclaw.service`)
 - Receives messages from WhatsApp/Telegram
 - Routes to the Nazar agent
-- Vault bind-mounted at `/vault`
-- Gateway API on port 18789 (127.0.0.1 only, Tailscale access)
+- Vault accessed directly at `/home/nazar/vault`
+- Gateway API on port 18789 (127.0.0.1 only, exposed via Tailscale Serve)
 
-### 2. Git-Based Vault Sync
+### 2. Syncthing-Based Vault Sync
 
-- Bare repo at `/srv/nazar/vault.git/` with post-receive hook
-- Working copy at `/srv/nazar/vault/` bind-mounted into container
-- Auto-commit cron every 5 minutes for agent writes
-- All sync over SSH through Tailscale — no public ports
+- Runs as the `nazar` user under systemd (`syncthing.service`)
+- Real-time P2P sync across all devices over Tailscale
+- No public ports — communicates through Tailscale mesh
+- No cron jobs or manual commits — changes sync automatically
 
 ### 3. Agent Workspace
 
@@ -82,7 +80,7 @@ vault/
 ├── 02-projects/           - Active projects with clear goals and deadlines
 ├── 03-areas/              - Life areas requiring ongoing attention
 ├── 04-resources/          - Reference material and knowledge base
-├── 05-archive/             - Completed or inactive items
+├── 05-archive/            - Completed or inactive items
 ├── 99-system/             - Agent workspace, skills, templates, docs
 │   ├── openclaw/          - Agent system
 │   └── templates/         - Obsidian templates
@@ -98,7 +96,7 @@ WhatsApp Audio
        │
        ▼
    ┌──────────┐
-   │ Whisper  │  (Local STT in container)
+   │ Whisper  │  (Local STT via Python venv)
    │  (local) │
    └────┬─────┘
         │ Text
@@ -109,20 +107,23 @@ WhatsApp Audio
         │
         ▼
 Daily Note Append → 01-daily-journey/YYYY/MM-MMMM/YYYY-MM-DD.md
+        │
+        ▼
+   Syncthing → All devices (real-time)
 ```
 
 ### Configuration Flow
 
 ```
-deploy/openclaw.json → /home/node/.openclaw/openclaw.json (inside container)
-                              │
-                              │ (OpenClaw reads)
-                              ▼
-                       OpenClaw Gateway
-                              │
-                              │ (workspace bind mount)
-                              ▼
-                   /vault/99-system/openclaw/workspace/
+/home/nazar/.openclaw/openclaw.json
+                      │
+                      │ (OpenClaw reads)
+                      ▼
+               OpenClaw Gateway
+                      │
+                      │ (direct filesystem)
+                      ▼
+           /home/nazar/vault/99-system/openclaw/workspace/
 ```
 
 ## Security Model
@@ -131,19 +132,19 @@ deploy/openclaw.json → /home/node/.openclaw/openclaw.json (inside container)
 |-------|-----------|
 | Network | Tailscale-only SSH; gateway bound to 127.0.0.1 |
 | Auth | Gateway token auth; SSH key-only access |
-| Sandbox | `non-main` mode — group/channel sessions isolated in Docker |
-| Filesystem | Agent only sees `/vault` via bind mount; no host filesystem access |
-| Container | Non-root user (uid 1000); read-only root FS option available |
-| Secrets | `.env` file on host, never committed; API keys via env vars |
-| Vault sync | Git over SSH over Tailscale (WireGuard encryption) |
+| User isolation | `nazar` service user (no sudo, locked password, home 700) |
+| Sandbox | `non-main` mode — group/channel sessions sandboxed by systemd |
+| Filesystem | systemd `ProtectSystem=strict`, `ReadWritePaths` limited to vault + config |
+| Secrets | `openclaw.json` in mode-700 directory, never committed to vault |
+| Vault sync | Syncthing over Tailscale (WireGuard encryption) |
 
 ## Portability
 
 Everything in `99-system/openclaw/` is portable:
 
-1. **Git** syncs the vault (including agent workspace) across devices via SSH
-2. **deploy/ repo** contains the Docker stack — push to VPS and run
-3. Move to a new machine: clone vault + clone deploy repo + `setup-vps.sh`
+1. **Syncthing** syncs the vault (including agent workspace) across devices automatically
+2. **bootstrap.sh** sets up a new VPS from scratch — one command
+3. Move to a new machine: run bootstrap + set up Syncthing + configure OpenClaw
 
 ## Extension Points
 

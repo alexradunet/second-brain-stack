@@ -128,7 +128,7 @@ echo "Next steps:"
 echo "  1. Verify you can SSH as debian: ssh debian@<vps-ip>"
 echo "  2. Install Tailscale:  curl -fsSL https://tailscale.com/install.sh | sh"
 echo "  3. Start Tailscale:    sudo tailscale up"
-echo "  4. Install Docker:     bash install-docker.sh"
+echo "  4. Run bootstrap:      sudo bash bootstrap.sh"
 echo ""
 echo "Current firewall rules:"
 ufw status numbered

@@ -103,7 +103,7 @@ Located at `vault/99-system/openclaw/skills/`:
 
 ### VPS Setup Skill (`vps-setup/`)
 - Guide for provisioning a Debian VPS
-- Automated scripts for security hardening, Tailscale, Docker
+- Automated scripts for security hardening, Tailscale, service setup
 - Security audit script
 
 ## Configuration

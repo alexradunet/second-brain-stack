@@ -1,6 +1,6 @@
 ---
 name: vps-setup
-description: Provision a fresh Debian 13 VPS with hardened security, Tailscale networking, Docker, and the Nazar (OpenClaw + Git vault sync) stack. Designed to be read by Claude Code running on the VPS to walk the user through setup interactively.
+description: Provision a fresh Debian 13 VPS with hardened security, Tailscale networking, and the Nazar (OpenClaw + Syncthing vault sync) stack. Designed to be read by Claude Code running on the VPS to walk the user through setup interactively.
 ---
 
 # VPS Setup Skill
@@ -14,7 +14,7 @@ Before starting, confirm with the user:
 1. **Fresh Debian 13 VPS** — OVH, Hetzner, or similar
 2. **Root SSH access** — user can SSH in as root (initial setup)
 3. **Tailscale account** — user has a Tailscale account at https://login.tailscale.com
-4. **Deploy repo** — the `deploy/` git repo is available (locally or on a git remote)
+4. **Repository** — the `easy-para-system-claw-vps` repo is available (locally or on a git remote)
 5. **API keys ready** — Anthropic, Kimi, or other LLM provider keys (entered during `openclaw configure`)
 
 ## Scripts
@@ -23,18 +23,18 @@ This skill includes automation scripts for each phase:
 
 | Script | Purpose | Run as |
 |--------|---------|--------|
-| `scripts/provision-vps.sh` | **Master script** — runs ALL phases end-to-end | root |
 | `scripts/secure-vps.sh` | Phases 1-5 only (user, SSH, firewall, fail2ban, auto-updates) | root |
 | `scripts/install-tailscale.sh` | Install + authenticate Tailscale | root |
 | `scripts/lock-ssh-to-tailscale.sh` | Remove public SSH, Tailscale-only access | root |
-| `scripts/install-docker.sh` | Install Docker CE + Compose plugin | root |
 | `scripts/audit-vps.sh` | Security + health check (read-only, safe to run anytime) | root |
+
+The recommended path is to use the **bootstrap script** (`bootstrap/bootstrap.sh`) which runs all phases end-to-end.
 
 ### Quick Start (one command)
 
 ```bash
-# Copy scripts to VPS, then:
-sudo bash provision-vps.sh --deploy-repo /srv/nazar/deploy
+# On VPS as root:
+curl -fsSL https://raw.githubusercontent.com/<user>/second-brain-stack/master/bootstrap/bootstrap.sh | sudo bash
 ```
 
 ### Step by Step (if you prefer control)
@@ -44,8 +44,7 @@ sudo bash secure-vps.sh           # Harden the server
 sudo bash install-tailscale.sh    # Install + auth Tailscale
 # Verify: ssh debian@<tailscale-ip>
 sudo bash lock-ssh-to-tailscale.sh  # Lock SSH to Tailscale
-sudo bash install-docker.sh       # Install Docker
-# Then deploy the stack with: /srv/nazar/deploy/scripts/setup-vps.sh
+# Then run bootstrap.sh for service setup
 sudo bash audit-vps.sh            # Verify everything
 ```
 
@@ -136,7 +135,7 @@ ssh debian@<vps-ip>
 
 ## Phase 3: Firewall (UFW)
 
-**Why:** Block everything except what we need. Tailscale will handle internal access. No public ports needed — vault sync uses Git over SSH through Tailscale.
+**Why:** Block everything except what we need. Tailscale will handle internal access. No public ports needed — vault sync uses Syncthing over Tailscale.
 
 ```bash
 sudo apt-get update && sudo apt-get install -y ufw
@@ -152,7 +151,7 @@ sudo ufw allow 22/tcp comment "SSH"
 sudo ufw --force enable
 ```
 
-**Note:** No Syncthing ports needed. Vault sync uses Git over SSH (through Tailscale). The gateway uses host networking with loopback binding, exposed automatically via integrated Tailscale Serve.
+**Note:** No Syncthing ports needed in UFW. Syncthing communicates through the Tailscale mesh network. The gateway binds to loopback and is exposed via Tailscale Serve.
 
 **Verify:**
 ```bash
@@ -253,7 +252,7 @@ After authorization:
 ```bash
 # Get Tailscale IP
 tailscale ip -4
-# Note this IP — it's how you'll access gateway and vault git repo
+# Note this IP — it's how you'll access the gateway and Syncthing
 ```
 
 ### Lock down SSH to Tailscale only (optional but recommended)
@@ -283,117 +282,98 @@ sudo ufw status
 
 ---
 
-## Phase 7: Install Docker
+## Phase 7: Run Bootstrap (Install Services)
 
-**Why:** Container isolates the OpenClaw gateway from the host.
+**Why:** This sets up the `nazar` service user, installs Node.js, OpenClaw, Syncthing, and creates systemd services.
 
-```bash
-# Install Docker from official repo
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl gnupg
-
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-sudo chmod a+r /etc/apt/keyrings/docker.gpg
-
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-  https://download.docker.com/linux/debian \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-# Add debian user to docker group (no sudo needed for docker commands)
-sudo usermod -aG docker debian
-```
-
-**Important:** The user must log out and back in for the docker group to take effect.
-
-**Note:** The provisioning script also adds an `openclaw` CLI alias to `/home/debian/.bashrc`:
-```bash
-alias openclaw="sudo docker exec -it nazar-gateway node dist/index.js"
-```
-This allows running OpenClaw commands directly (e.g., `openclaw configure`, `openclaw devices list`) without typing the full `docker exec` command.
+### Option A: One-line bootstrap (recommended)
 
 ```bash
-# Log out and back in, then verify:
-exit
-# SSH back in
-ssh debian@<tailscale-ip>
+curl -fsSL https://raw.githubusercontent.com/<user>/second-brain-stack/master/bootstrap/bootstrap.sh | sudo bash
 ```
+
+### Option B: Clone and run
+
+```bash
+su - debian
+git clone <repo-url> ~/nazar
+cd ~/nazar
+sudo bash bootstrap/bootstrap.sh
+```
+
+The bootstrap script:
+- Creates `nazar` service user (no sudo, locked password)
+- Installs Node.js 22, OpenClaw, Syncthing
+- Hardens SSH (if not already done)
+- Configures UFW, Fail2Ban, auto-updates
+- Creates systemd user services (`openclaw.service`, `syncthing.service`)
+- Generates a secure gateway token
+- Installs voice tools (Whisper, Piper)
+- Creates helper scripts in `/home/debian/bin/`
 
 **Verify:**
 ```bash
-docker run --rm hello-world
-# Should print: Hello from Docker!
-docker compose version
-# Should print: Docker Compose version v2.x.x
+# Check nazar user exists
+id nazar
+# Expected: uid=...(nazar) gid=...(nazar) groups=...(nazar)
+
+# Check services exist
+ls /etc/systemd/user/openclaw.service /etc/systemd/user/syncthing.service
+# Both should exist
+
+# Check OpenClaw config
+ls /home/nazar/.openclaw/openclaw.json
+# Should exist with no placeholder tokens
 ```
 
 ---
 
-## Phase 8: Deploy the Nazar Stack
+## Phase 8: Deploy Vault and Start Services
 
-**Why:** This is what we're here for — get OpenClaw running with Git-based vault sync.
+**Why:** Get the vault content onto the VPS and start OpenClaw + Syncthing.
 
-**Note:** The docker-compose uses `network_mode: host` for the gateway container and includes integrated Tailscale Serve mode. The Tailscale CLI is included in the Dockerfile. The gateway binds to loopback and is automatically exposed at `https://<tailscale-hostname>/` via Tailscale Serve.
-
-### Option A: Push deploy repo from local machine
-
-From the user's local machine:
-```bash
-scp -r C:\Second_Brain\deploy\ debian@<tailscale-ip>:/srv/nazar/deploy/
-```
-
-### Option B: Clone from git remote
-
-If the deploy repo has been pushed to GitHub/GitLab:
-```bash
-sudo mkdir -p /srv/nazar
-sudo chown debian:debian /srv/nazar
-git clone <repo-url> /srv/nazar/deploy
-```
-
-### Run the setup script
+### Copy vault content
 
 ```bash
-sudo bash /srv/nazar/deploy/scripts/setup-vps.sh
+# As debian user
+sudo cp -r ~/nazar/vault/* /home/nazar/vault/
+sudo chown -R nazar:nazar /home/nazar/vault
 ```
 
-This creates:
-- `/srv/nazar/vault/` — git working copy (empty initially, or with initial commit)
-- `/srv/nazar/vault.git/` — bare Git repo with post-receive hook
-- `/srv/nazar/data/openclaw/` — OpenClaw config + state
-- `/srv/nazar/scripts/vault-auto-commit.sh` — cron script for agent writes
-- `/srv/nazar/.env` — secrets file with auto-generated gateway token
-- `vault` group with debian user
-- Cron job: auto-commit every 5 minutes
-
-### Configure models, API keys, and channels
+### Start Syncthing
 
 ```bash
-openclaw configure
+sudo bash ~/nazar/nazar/scripts/setup-syncthing.sh
 ```
 
-This interactive wizard walks through model selection, API key entry, and channel setup (WhatsApp, etc.). No manual `.env` editing needed.
+### Start OpenClaw
+
+```bash
+sudo bash ~/nazar/nazar/scripts/setup-openclaw.sh
+```
+
+### Configure OpenClaw
+
+```bash
+sudo -u nazar openclaw configure
+```
+
+This interactive wizard walks through model selection, API key entry, and channel setup (WhatsApp, etc.).
 
 **Verify:**
 ```bash
-docker compose ps
-# Gateway should be "healthy" or "running"
+# Services running
+sudo -u nazar systemctl --user status openclaw
+sudo -u nazar systemctl --user status syncthing
+# Both should be "active (running)"
 
+# Gateway responds
 curl -sk https://<tailscale-hostname>/
-# Gateway should respond (via integrated Tailscale Serve)
+# Should get a response
 
-docker compose exec nazar-gateway ls /vault/
-# Should show vault folders (empty until you push content)
-
-# Check git sync infrastructure
-git -C /srv/nazar/vault log --oneline -3
-ls /srv/nazar/vault.git/hooks/post-receive
-crontab -u debian -l | grep vault-auto-commit
+# Vault has content
+ls /home/nazar/vault/
+# Should show: 00-inbox, 01-daily-journey, ..., 99-system
 ```
 
 ### Device pairing (first browser access)
@@ -401,66 +381,59 @@ crontab -u debian -l | grep vault-auto-commit
 The first time a browser connects to the Control UI at `https://<tailscale-hostname>/`, the gateway requires device pairing. Approve it from the CLI:
 
 ```bash
-openclaw devices list              # List pending pairing requests
-openclaw devices approve <request-id>   # Approve the device
+sudo -u nazar openclaw devices list              # List pending pairing requests
+sudo -u nazar openclaw devices approve <request-id>   # Approve the device
 ```
-
-### Run onboarding
-
-After deployment and device pairing, run the interactive setup wizard:
-
-```bash
-openclaw configure
-```
-
-This walks through WhatsApp linking, model configuration, and other initial settings.
 
 ---
 
 ## Phase 9: Connect Your Devices (Vault Sync)
 
-**Why:** Sync the Obsidian vault from user's devices to the VPS using Git.
+**Why:** Sync the Obsidian vault across all your devices using Syncthing.
+
+### Get VPS Syncthing device ID
+
+```bash
+sudo -u nazar syncthing cli show system | grep myID
+```
 
 ### Laptop Setup
 
-```bash
-# Clone the vault over Tailscale SSH
-git clone debian@<tailscale-ip>:/srv/nazar/vault.git ~/vault
-
-# Open in Obsidian, install Obsidian Git plugin
-# Configure: auto-pull 5 min, auto-push after commit, auto-commit 5 min
-```
+1. Install Syncthing on your laptop
+2. Add the VPS device (paste the device ID from above)
+3. Share the vault folder
+4. Open the vault in Obsidian — changes sync in real-time
 
 ### Phone Setup (Android)
 
-1. Install Obsidian + Obsidian Git plugin
-2. Configure repository URL: `debian@<tailscale-ip>:/srv/nazar/vault.git`
-3. Requires Tailscale running on the phone
-4. Set auto-pull and auto-push intervals
+1. Install the Syncthing app from Play Store
+2. Add the VPS device
+3. Share the vault folder
+4. Install Obsidian and point it to the Syncthing vault folder
 
 ### Phone Setup (iOS)
 
-1. Install Obsidian + Obsidian Git plugin, or
-2. Use Working Copy app to clone, then open in Obsidian via Files
+1. Install Möbius Sync (Syncthing client for iOS)
+2. Add the VPS device and share the vault folder
+3. Open vault in Obsidian via Files integration
 
-### First-time sync (vault already on laptop)
+### Accept devices on VPS
 
-If you already have a vault locally:
+On VPS, accept the incoming device connections:
 
-```bash
-cd ~/vault
-git init
-git remote add origin debian@<tailscale-ip>:/srv/nazar/vault.git
-git add -A
-git commit -m "initial vault"
-git push -u origin main
-```
+1. Access `http://<tailscale-ip>:8384` (Syncthing web UI)
+2. Accept device connections
+3. Accept folder share requests
 
 **Verify:**
 ```bash
-# After push:
-ssh debian@<tailscale-ip> "ls /srv/nazar/vault/"
-# Should show: 00-inbox, 01-daily-journey, ..., 99-system
+# Check connections
+sudo -u nazar syncthing cli show connections
+# Should show your devices
+
+# Check folder status
+sudo -u nazar syncthing cli show folders
+# vault folder should be syncing
 ```
 
 ---
@@ -494,29 +467,35 @@ systemctl is-enabled unattended-upgrades
 tailscale status
 # Expected: shows connected devices
 
-# 7. Docker container healthy
-cd /srv/nazar && docker compose ps
-# Expected: gateway running/healthy
+# 7. OpenClaw service running
+sudo -u nazar systemctl --user status openclaw
+# Expected: active (running)
 
-# 8. Gateway using host network with loopback binding
-docker inspect nazar-gateway --format='{{.HostConfig.NetworkMode}}'
-# Expected: host
+# 8. Syncthing service running
+sudo -u nazar systemctl --user status syncthing
+# Expected: active (running)
 
-# 9. Vault git sync working
-git -C /srv/nazar/vault log --oneline -3
-# Expected: shows commits
-ls /srv/nazar/vault.git/hooks/post-receive
-# Expected: exists and is executable
-crontab -u debian -l | grep vault-auto-commit
-# Expected: shows cron entry
+# 9. Vault syncing
+sudo -u nazar syncthing cli show connections
+# Expected: shows connected devices
 
 # 10. No secrets in vault
-grep -r "sk-ant\|sk-" /srv/nazar/vault/ 2>/dev/null | head -5
+grep -r "sk-ant\|sk-" /home/nazar/vault/ 2>/dev/null | head -5
 # Expected: no output (no API keys in vault files)
 
-# 11. No legacy Syncthing ports
+# 11. No legacy Syncthing ports in UFW
 sudo ufw status | grep -E "22000|21027"
-# Expected: no output (ports closed)
+# Expected: no output (Syncthing uses Tailscale, no UFW ports needed)
+
+# 12. Config has no placeholder tokens
+grep -E "GENERATE_NEW_TOKEN|GENERATE_SECURE_TOKEN|CHANGE_ME" /home/nazar/.openclaw/openclaw.json
+# Expected: no output (token has been generated)
+```
+
+Or run the audit script:
+
+```bash
+sudo bash ~/nazar/vault/99-system/openclaw/skills/vps-setup/scripts/audit-vps.sh
 ```
 
 ---
@@ -528,29 +507,48 @@ If SSH is locked to Tailscale and Tailscale goes down:
 - Use VPS provider's web console (OVH: KVM, Hetzner: Console)
 - Re-enable public SSH: `sudo ufw allow 22/tcp`
 
-### Docker build fails (out of memory)
-Small VPS may need swap:
+### Services not starting
+Check systemd user services:
+```bash
+# Check logs
+sudo -u nazar journalctl --user -u openclaw --no-pager -n 20
+sudo -u nazar journalctl --user -u syncthing --no-pager -n 20
+
+# Ensure lingering is enabled
+loginctl show-user nazar | grep Linger
+# If Linger=no:
+sudo loginctl enable-linger nazar
+```
+
+### Syncthing not syncing
+```bash
+# Check connections
+sudo -u nazar syncthing cli show connections
+
+# Check folder errors
+sudo -u nazar syncthing cli show folders
+
+# Ensure Tailscale is connected
+tailscale status
+```
+
+### OpenClaw config issues
+```bash
+# Check config
+cat /home/nazar/.openclaw/openclaw.json | jq .
+
+# Reconfigure
+sudo -u nazar openclaw configure
+```
+
+### Out of memory (small VPS)
+Add swap:
 ```bash
 sudo fallocate -l 2G /swapfile
 sudo chmod 600 /swapfile
 sudo mkswap /swapfile
 sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-```
-
-### Git push rejected
-The auto-commit cron may have committed agent writes. Pull first:
-```bash
-git pull --rebase origin main
-git push
-```
-
-### Container can't write to vault
-Fix permissions:
-```bash
-sudo chown -R debian:vault /srv/nazar/vault
-sudo find /srv/nazar/vault -type d -exec chmod 2775 {} +
-sudo find /srv/nazar/vault -type f -exec chmod 0664 {} +
 ```
 
 ---
@@ -561,18 +559,19 @@ sudo find /srv/nazar/vault -type f -exec chmod 0664 {} +
 |---------|--------|-----|
 | SSH | Tailscale | `ssh debian@<tailscale-ip>` |
 | Gateway | Tailscale (automatic) | `https://<tailscale-hostname>/` |
-| Vault (git) | Tailscale (SSH) | `git clone debian@<tailscale-ip>:/srv/nazar/vault.git` |
+| Syncthing GUI | Tailscale | `http://<tailscale-ip>:8384` |
 
 | Path | Contents |
 |------|----------|
-| `/srv/nazar/vault/` | Obsidian vault (git working copy) |
-| `/srv/nazar/vault.git/` | Bare Git repo (push/pull target) |
-| `/srv/nazar/data/openclaw/` | OpenClaw config + state |
-| `/srv/nazar/scripts/` | Auto-commit cron script |
-| `/srv/nazar/.env` | Secrets (API keys, tokens) |
-| `/srv/nazar/deploy/` | Deployment repo |
-| `/opt/openclaw/` | OpenClaw source (for Docker build) |
+| `/home/nazar/vault/` | Obsidian vault (synced via Syncthing) |
+| `/home/nazar/.openclaw/` | OpenClaw config + devices (mode 700) |
+| `/home/nazar/.local/state/syncthing/` | Syncthing state |
+| `/home/nazar/.local/venv-voice/` | Voice tools (Whisper, Piper) |
+| `/home/debian/bin/` | Helper scripts (nazar-status, nazar-logs, etc.) |
 
-| Alias | Command | Purpose |
-|-------|---------|---------|
-| `openclaw` | `sudo docker exec -it nazar-gateway node dist/index.js` | OpenClaw CLI (added to `~/.bashrc` during provisioning) |
+| Helper | Purpose |
+|--------|---------|
+| `nazar-status` | Check OpenClaw + Syncthing service status |
+| `nazar-logs` | Tail OpenClaw logs |
+| `nazar-restart` | Restart OpenClaw service |
+| `nazar-audit` | Run security audit |
