@@ -10,7 +10,9 @@
       "Bash(git remote set-url:*)",
       "Bash(find:*)",
       "Bash(test:*)",
-      "Bash(git update-index:*)"
+      "Bash(git update-index:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(git status:*)"
     ]
   }
 }

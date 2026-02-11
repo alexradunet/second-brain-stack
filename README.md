@@ -8,7 +8,7 @@ An AI-assisted personal knowledge management system built on Obsidian, powered b
 
 ```bash
 # On your fresh Debian/Ubuntu VPS (as root):
-curl -fsSL https://raw.githubusercontent.com/<user>/second-brain/main/bootstrap/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/bootstrap/bootstrap.sh | bash
 
 # Then follow the on-screen instructions
 ```
@@ -92,7 +92,7 @@ Run the bootstrap script on a fresh Debian 13 or Ubuntu 22.04+ VPS:
 
 ```bash
 # As root
-curl -fsSL https://raw.githubusercontent.com/<user>/second-brain/main/bootstrap/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/bootstrap/bootstrap.sh | bash
 ```
 
 This will:
@@ -115,7 +115,7 @@ Clone this repository and copy the vault:
 ```bash
 # As debian user
 su - debian
-git clone <your-repo-url> ~/nazar-deploy
+git clone https://github.com/alexradunet/easy-para-system-claw-vps.git ~/nazar-deploy
 cd ~/nazar-deploy
 
 # Copy vault to nazar user

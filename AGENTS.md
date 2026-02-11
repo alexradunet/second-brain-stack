@@ -148,7 +148,7 @@ VPS provisioning and security hardening scripts.
 
 ```bash
 # On fresh VPS as root
-curl -fsSL https://raw.githubusercontent.com/<user>/second-brain/main/bootstrap/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/bootstrap/bootstrap.sh | bash
 
 # Follow on-screen instructions to:
 # 1. Start Tailscale

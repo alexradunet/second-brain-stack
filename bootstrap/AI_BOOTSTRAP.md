@@ -49,7 +49,7 @@ Guide the user through these phases in order:
 **Action:**
 ```bash
 # Run the bootstrap script
-curl -fsSL https://raw.githubusercontent.com/<user>/second-brain/main/bootstrap/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/bootstrap/bootstrap.sh | bash
 ```
 
 **What this does:**
@@ -101,7 +101,7 @@ curl -fsSL https://raw.githubusercontent.com/<user>/second-brain/main/bootstrap/
 
 2. Clone the repository:
    ```bash
-   git clone <repo-url> ~/nazar
+   git clone https://github.com/alexradunet/easy-para-system-claw-vps.git ~/nazar
    cd ~/nazar
    ```
 

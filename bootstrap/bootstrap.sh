@@ -9,7 +9,7 @@
 #   - OpenClaw runs directly via npm (not Docker)
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/<user>/second-brain/main/bootstrap/bootstrap.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/bootstrap/bootstrap.sh | bash
 #
 
 set -e
@@ -66,8 +66,7 @@ apt-get update -qq
 
 log_info "Installing base packages..."
 apt-get install -y -qq curl git ufw fail2ban jq openssl \
-    apt-transport-https ca-certificates gnupg lsb-release \
-    software-properties-common
+    apt-transport-https ca-certificates gnupg lsb-release
 
 log_success "Base packages installed"
 
@@ -580,7 +579,7 @@ echo "   sudo tailscale up"
 echo ""
 echo "2. Clone this repository as debian user:"
 echo "   su - debian"
-echo "   git clone <your-repo-url> ~/nazar"
+echo "   git clone https://github.com/alexradunet/easy-para-system-claw-vps.git ~/nazar"
 echo ""
 echo "3. Copy vault to nazar user:"
 echo "   sudo cp -r ~/nazar/vault/* /home/nazar/vault/"

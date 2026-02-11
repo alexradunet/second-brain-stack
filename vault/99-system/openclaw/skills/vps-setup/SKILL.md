@@ -34,7 +34,7 @@ The recommended path is to use the **bootstrap script** (`bootstrap/bootstrap.sh
 
 ```bash
 # On VPS as root:
-curl -fsSL https://raw.githubusercontent.com/<user>/second-brain-stack/master/bootstrap/bootstrap.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/bootstrap/bootstrap.sh | sudo bash
 ```
 
 ### Step by Step (if you prefer control)
@@ -289,14 +289,14 @@ sudo ufw status
 ### Option A: One-line bootstrap (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<user>/second-brain-stack/master/bootstrap/bootstrap.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/bootstrap/bootstrap.sh | sudo bash
 ```
 
 ### Option B: Clone and run
 
 ```bash
 su - debian
-git clone <repo-url> ~/nazar
+git clone https://github.com/alexradunet/easy-para-system-claw-vps.git ~/nazar
 cd ~/nazar
 sudo bash bootstrap/bootstrap.sh
 ```

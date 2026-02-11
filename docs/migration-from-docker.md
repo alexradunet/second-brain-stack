@@ -37,7 +37,7 @@ If using a new VPS:
 ssh root@<new-vps-ip>
 
 # Run new bootstrap
-curl -fsSL https://raw.githubusercontent.com/<user>/second-brain/main/bootstrap/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/bootstrap/bootstrap.sh | bash
 ```
 
 If reusing existing VPS:

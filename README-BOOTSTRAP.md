@@ -12,7 +12,7 @@ Quick reference for bootstrapping a fresh VPS with the simplified Nazar Second B
 ## One-Line Bootstrap
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<user>/second-brain/main/bootstrap/bootstrap.sh | bash
+curl -fsSL https://raw.githubusercontent.com/alexradunet/easy-para-system-claw-vps/master/bootstrap/bootstrap.sh | bash
 ```
 
 ## What Happens
@@ -54,7 +54,7 @@ sudo tailscale up
 
 ```bash
 su - debian
-git clone <your-repo-url> ~/nazar
+git clone https://github.com/alexradunet/easy-para-system-claw-vps.git ~/nazar
 cd ~/nazar
 ```
 
